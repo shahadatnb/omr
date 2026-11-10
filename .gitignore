@@ -1,0 +1,70 @@
+# ==========================================
+# OMR Engine Project — .gitignore
+# ==========================================
+
+# 1. Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 2. Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# 3. Environment variables & Secrets
+.env
+.env.local
+.env.*.local
+
+# 4. Django Database & Sessions
+*.sqlite3
+*.sqlite3-journal
+db.sqlite3
+db.sqlite3-shm
+db.sqlite3-wal
+
+# 5. Django Static & User Uploaded Media
+staticfiles/
+media/scans/
+media/standalone_scans/
+media/settings/
+# Keep sample template image for canvas
+!media/templates/
+!media/templates/sample_warped.jpg
+
+# 6. Temporary Test Images & Diagnostic Scripts
+box_*.jpg
+col_*.jpg
+test_*.jpg
+test_*.py
+id_roi.jpg
+set_roi.jpg
+warped_sample.jpg
+
+# 7. Log files
+*.log
+logs/
+
+# 8. Celery & Redis
+celerybeat-schedule
+celerybeat.pid
+
+# 9. Operating System & Editor Files
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+.directory
+
+# 10. IDEs & Editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo

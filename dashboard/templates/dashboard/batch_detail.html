@@ -1,0 +1,374 @@
+{% extends 'dashboard/base.html' %}
+
+{% block title %}ব্যাচ ফলাফল #{{ batch.id }} | OMR Engine{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item"><a href="{% url 'dashboard:batch_list' %}">সকল ব্যাচ</a></li>
+                <li class="breadcrumb-item active">ব্যাচ #{{ batch.id }}</li>
+            </ol>
+        </nav>
+        <h3 class="fw-bold mb-0">{{ batch.exam_title|default:"Class Test" }}</h3>
+        <p class="text-muted mb-0">Class Test ID: <strong>{{ batch.class_test_id }}</strong> | তারিখ: {{ batch.created_at|date:"d M Y, h:i A" }}</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <!-- BUTTON TO ADD MORE MISSED FILES TO THIS EXISTING BATCH -->
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#appendFilesModal">
+            <i class="fa fa-plus-circle me-1"></i> আরও ওএমআর ফাইল যোগ করুন
+        </button>
+        <a href="{% url 'dashboard:sync_to_laravel' batch.id %}" class="btn btn-success" onclick="return confirm('আপনি কি নিশ্চিত যে সকল ম্যাচড শিক্ষার্থীর প্রাপ্ত নম্বর লারাভেলে পাঠাতে চান?');">
+            <i class="fa fa-sync-alt me-1"></i> লারাভেলে রেজাল্ট সিঙ্ক করুন
+        </a>
+        <div class="dropdown">
+            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                <i class="fa fa-cog"></i>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li>
+                    <form method="post" action="{% url 'dashboard:batch_delete' batch.id %}" onsubmit="return confirm('আপনি কি নিশ্চিত যে এই সম্পূর্ণ ব্যাচ ও এর সকল স্ক্যান রেকর্ড মুছে ফেলতে চান?');">
+                        {% csrf_token %}
+                        <button type="submit" class="dropdown-item text-danger"><i class="fa fa-trash me-2"></i>সম্পূর্ণ ব্যাচ মুছুন</button>
+                    </form>
+                </li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Stats Row -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card shadow-sm p-3">
+            <div class="text-muted small">মোট শিট স্ক্যান</div>
+            <h3 class="fw-bold mb-0">{{ batch.total_files }}</h3>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card success shadow-sm p-3">
+            <div class="text-muted small">সফলভাবে ম্যাচড</div>
+            <h3 class="fw-bold text-success mb-0">{{ batch.matched_count }}</h3>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card warning shadow-sm p-3">
+            <div class="text-muted small">অমিলে থাকা শিট (Unmatched)</div>
+            <h3 class="fw-bold text-danger mb-0">{{ batch.unmatched_count }}</h3>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm p-3">
+            <div class="text-muted small">লারাভেল স্ট্যাটাস</div>
+            <div class="mt-1">
+                {% if batch.synced_to_laravel %}
+                    <span class="badge bg-success fs-6"><i class="fa fa-check-circle me-1"></i> সিঙ্ক সম্পন্ন</span>
+                {% else %}
+                    <span class="badge bg-warning text-dark fs-6"><i class="fa fa-clock me-1"></i> সিঙ্ক অপেক্ষমাণ</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if batch.unmatched_count > 0 %}
+<div class="alert alert-warning d-flex align-items-center mb-4" role="alert">
+    <i class="fa fa-exclamation-triangle fa-2x me-3 text-warning"></i>
+    <div>
+        <strong>মনোযোগ দিন!</strong> {{ batch.unmatched_count }} টি ওএমআর শিটের রোল নম্বর লারাভেলের শিক্ষার্থীর সাথে ম্যাচ করেনি।
+        নিচের তালিকা থেকে <strong>"ম্যানুয়াল এডিট"</strong> বাটনে ক্লিক করে সঠিক শিক্ষার্থী নির্বাচন করে দিন।
+    </div>
+</div>
+{% endif %}
+
+<!-- Filters & Results Table -->
+<div class="card shadow-sm">
+    <div class="card-header bg-white py-3">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <ul class="nav nav-pills">
+                <li class="nav-item">
+                    <a class="nav-link {% if filter_type == 'all' %}active{% endif %}" href="?filter=all">
+                        সকল শিট ({{ batch.total_files }})
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if filter_type == 'unmatched' %}active bg-danger{% endif %}" href="?filter=unmatched">
+                        আনম্যাচড ({{ batch.unmatched_count }})
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if filter_type == 'matched' %}active bg-success{% endif %}" href="?filter=matched">
+                        ম্যাচড ({{ batch.matched_count }})
+                    </a>
+                </li>
+            </ul>
+            <div class="text-muted small">
+                মোট রেকর্ড: <strong>{{ results|length }}</strong>
+            </div>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3">ফাইলের নাম</th>
+                        <th>ডিটেক্টেড রোল (OMR)</th>
+                        <th>সেট</th>
+                        <th>শিক্ষার্থীর তথ্য (লারাভেল)</th>
+                        <th>সঠিক / ভুল</th>
+                        <th>মোট প্রাপ্ত নম্বর</th>
+                        <th>স্ট্যাটাস</th>
+                        <th class="text-end pe-3">অ্যাকশন</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in results %}
+                    <tr class="{% if not item.is_matched %}table-warning{% endif %}">
+                        <td class="ps-3">
+                            <span class="text-truncate d-inline-block" style="max-width: 220px;" title="{{ item.original_filename }}">
+                                <i class="fa fa-file-image text-primary me-1"></i> {{ item.original_filename }}
+                            </span>
+                        </td>
+                        <td>
+                            {% if item.student_numeric_id %}
+                                <span class="badge bg-secondary font-monospace fs-6">{{ item.student_numeric_id }}</span>
+                            {% else %}
+                                <span class="badge bg-danger">শনাক্ত হয়নি</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if item.exam_set %}
+                                <span class="badge bg-primary fs-6">{{ item.exam_set }}</span>
+                            {% else %}
+                                <span class="badge bg-secondary">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if item.is_matched %}
+                                <strong>{{ item.student_name }}</strong>
+                                <div class="small text-muted">Reg: {{ item.student_reg_no }}</div>
+                            {% else %}
+                                <span class="text-danger fw-bold"><i class="fa fa-times-circle me-1"></i> ম্যাচ করেনি</span>
+                                {% if item.error_message %}
+                                    <div class="small text-muted">{{ item.error_message }}</div>
+                                {% endif %}
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="text-success fw-bold">+{{ item.correct_count }}</span> / 
+                            <span class="text-danger fw-bold">-{{ item.wrong_count }}</span>
+                            <div class="small text-muted">ছেড়েছে: {{ item.unattempted_count }}</div>
+                        </td>
+                        <td>
+                            <h5 class="mb-0 fw-bold {% if item.marks > 0 %}text-success{% else %}text-muted{% endif %}">
+                                {{ item.marks|floatformat:2 }}
+                            </h5>
+                        </td>
+                        <td>
+                            {% if item.status == 'matched' %}
+                                <span class="badge badge-matched"><i class="fa fa-check me-1"></i> ম্যাচড</span>
+                            {% elif item.status == 'manual' %}
+                                <span class="badge badge-manual"><i class="fa fa-user-edit me-1"></i> ম্যানুয়াল এডিট</span>
+                            {% else %}
+                                <span class="badge badge-unmatched"><i class="fa fa-exclamation-circle me-1"></i> আনম্যাচড</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end pe-3">
+                            <div class="btn-group btn-group-sm">
+                                <a href="{% url 'dashboard:manual_edit' item.id %}" class="btn {% if not item.is_matched %}btn-warning fw-bold{% else %}btn-outline-secondary{% endif %}" title="ম্যানুয়াল এডিট">
+                                    <i class="fa fa-edit me-1"></i> এডিট
+                                </a>
+                                <form method="post" action="{% url 'dashboard:scan_result_delete' item.id %}" class="d-inline" onsubmit="return confirm('এই ওএমআর শিটের রেকর্ডটি মুছে ফেলতে চান?');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-outline-danger" title="মুছুন">
+                                        <i class="fa fa-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center py-4 text-muted">
+                            কোনো ওএমআর ফলাফল পাওয়া যায়নি।
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: ADD MORE MISSED FILES TO THIS EXISTING BATCH -->
+<div class="modal fade" id="appendFilesModal" tabindex="-1" aria-labelledby="appendFilesModalLabel" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="appendFilesModalLabel">
+                    <i class="fa fa-plus-circle text-primary me-2"></i>ব্যাচ #{{ batch.id }}-এ আরও ফাইল যুক্ত করুন
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" id="modalCloseBtn"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div id="modalSelectSection">
+                    <p class="text-muted">যেসব ওএমআর শিট পূর্বে বাদ পড়েছিল, সেগুলো নির্বাচন করে এই ব্যাচে সরাসরি যুক্ত করুন।</p>
+                    
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-6">
+                            <label class="btn btn-outline-primary w-100 py-3 text-start">
+                                <i class="fa fa-folder-open fa-2x mb-2 text-primary d-block"></i>
+                                <strong>ফোল্ডার নির্বাচন করুন</strong>
+                                <div class="small text-muted">বাদ পড়া শিটের সম্পূর্ণ ফোল্ডার</div>
+                                <input type="file" id="modalFolderInput" webkitdirectory directory multiple accept="image/*" class="d-none" onchange="handleModalFileSelect(this)">
+                            </label>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="btn btn-outline-secondary w-100 py-3 text-start">
+                                <i class="fa fa-images fa-2x mb-2 text-secondary d-block"></i>
+                                <strong>এক বা একাধিক ফাইল নির্বাচন করুন</strong>
+                                <div class="small text-muted">নির্দিষ্ট ওএমআর শিটের ছবি</div>
+                                <input type="file" id="modalFilesInput" multiple accept="image/*" class="d-none" onchange="handleModalFileSelect(this)">
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="modalFileAlert" class="alert alert-info py-2 d-none">
+                        <i class="fa fa-check-circle me-1"></i> <span id="modalFileCountText">0</span> টি ফাইল নির্বাচিত হয়েছে।
+                    </div>
+                </div>
+
+                <!-- Modal Progress Section (hidden initially) -->
+                <div id="modalProgressSection" class="d-none">
+                    <h6 class="fw-bold text-primary mb-2" id="modalProgressStatus">প্রসেসিং চলছে...</h6>
+                    <div class="progress mb-3" style="height: 25px;">
+                        <div id="modalProgressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" style="width: 0%;">
+                            0%
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between small text-muted mb-2">
+                        <span>সম্পন্ন: <strong id="modalProcessedCount">0</strong> / <strong id="modalTotalCount">0</strong></span>
+                        <span>নতুন ম্যাচড: <strong class="text-success" id="modalMatchedCount">0</strong> | আনম্যাচড: <strong class="text-danger" id="modalUnmatchedCount">0</strong></span>
+                    </div>
+                    <div class="border rounded p-2 bg-light small" style="max-height: 180px; overflow-y: auto;" id="modalLogBox">
+                        <!-- Live text log -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="modalCancelBtn">বন্ধ করুন</button>
+                <button type="button" class="btn btn-primary" id="modalStartBtn" onclick="startModalAppendProcess()">
+                    <i class="fa fa-play me-1"></i> প্রসেসিং শুরু করুন
+                </button>
+                <button type="button" class="btn btn-success d-none" id="modalDoneBtn" onclick="location.reload()">
+                    <i class="fa fa-check me-1"></i> সম্পন্ন (পেজ রিফ্রেশ করুন)
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let modalSelectedFiles = [];
+const batchId = {{ batch.id }};
+
+function handleModalFileSelect(input) {
+    if (input.files && input.files.length > 0) {
+        const validExts = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff'];
+        modalSelectedFiles = Array.from(input.files).filter(f => {
+            const ext = '.' + f.name.split('.').pop().toLowerCase();
+            return validExts.includes(ext);
+        });
+
+        document.getElementById('modalFileAlert').classList.remove('d-none');
+        document.getElementById('modalFileCountText').innerText = modalSelectedFiles.length;
+    }
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+async function startModalAppendProcess() {
+    if (modalSelectedFiles.length === 0) {
+        alert('অনুগ্রহ করে অন্তত একটি ওএমআর ফাইল নির্বাচন করুন।');
+        return;
+    }
+
+    document.getElementById('modalSelectSection').classList.add('d-none');
+    document.getElementById('modalProgressSection').classList.remove('d-none');
+    document.getElementById('modalStartBtn').classList.add('d-none');
+    document.getElementById('modalCancelBtn').classList.add('d-none');
+    document.getElementById('modalCloseBtn').classList.add('d-none');
+
+    const total = modalSelectedFiles.length;
+    let processed = 0;
+    let matched = 0;
+    let unmatched = 0;
+
+    document.getElementById('modalTotalCount').innerText = total;
+
+    for (let i = 0; i < total; i++) {
+        const file = modalSelectedFiles[i];
+        const percent = Math.round(((i) / total) * 100);
+        document.getElementById('modalProgressBar').style.width = percent + '%';
+        document.getElementById('modalProgressBar').innerText = percent + '%';
+        document.getElementById('modalProgressStatus').innerText = `প্রসেস হচ্ছে (${i + 1}/${total}): ${file.name}`;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const resp = await fetch(`/dashboard/batch/${batchId}/upload-single-ajax/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCookie('csrftoken') },
+                body: formData
+            });
+            const data = await resp.json();
+
+            processed++;
+            if (data.is_matched) matched++;
+            else unmatched++;
+
+            document.getElementById('modalProcessedCount').innerText = processed;
+            document.getElementById('modalMatchedCount').innerText = matched;
+            document.getElementById('modalUnmatchedCount').innerText = unmatched;
+
+            const logLine = document.createElement('div');
+            logLine.innerHTML = `<span class="${data.is_matched ? 'text-success' : 'text-danger'}">●</span> [${file.name}] → Roll: ${data.student_numeric_id || 'N/A'}, Set: ${data.exam_set || '-'} → <strong>${data.is_matched ? data.student_name : 'ম্যাচ করেনি'}</strong> (Score: ${data.marks})`;
+            document.getElementById('modalLogBox').appendChild(logLine);
+            document.getElementById('modalLogBox').scrollTop = document.getElementById('modalLogBox').scrollHeight;
+
+        } catch (err) {
+            console.error(err);
+            processed++;
+            unmatched++;
+        }
+    }
+
+    // Complete
+    document.getElementById('modalProgressBar').style.width = '100%';
+    document.getElementById('modalProgressBar').innerText = '১০০% সম্পন্ন';
+    document.getElementById('modalProgressBar').classList.remove('progress-bar-animated', 'progress-bar-striped');
+    document.getElementById('modalProgressBar').classList.add('bg-success');
+
+    document.getElementById('modalProgressStatus').innerHTML = '<i class="fa fa-check-circle text-success me-1"></i>সকল ফাইল সফলভাবে যুক্ত ও মূল্যায়িত হয়েছে!';
+    document.getElementById('modalDoneBtn').classList.remove('d-none');
+}
+</script>
+{% endblock %}

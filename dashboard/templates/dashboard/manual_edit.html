@@ -1,0 +1,149 @@
+{% extends 'dashboard/base.html' %}
+
+{% block title %}ম্যানুয়াল ওএমআর এডিট | OMR Engine{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <nav aria-label="breadcrumb">
+                    <ol class="breadcrumb mb-1">
+                        <li class="breadcrumb-item"><a href="{% url 'dashboard:batch_list' %}">ব্যাচসমূহ</a></li>
+                        <li class="breadcrumb-item"><a href="{% url 'dashboard:batch_detail' batch.id %}">ব্যাচ #{{ batch.id }}</a></li>
+                        <li class="breadcrumb-item active">ম্যানুয়াল এডিট</li>
+                    </ol>
+                </nav>
+                <h3 class="fw-bold mb-0">ম্যানুয়াল ওএমআর সংশোধন (Manual Edit)</h3>
+                <p class="text-muted mb-0">ফাইল: <strong>{{ result.original_filename }}</strong> | ক্লাস টেস্ট ID: <strong>{{ batch.class_test_id }}</strong></p>
+            </div>
+            <a href="{% url 'dashboard:batch_detail' batch.id %}" class="btn btn-outline-secondary">
+                <i class="fa fa-arrow-left me-1"></i> ফিরে যান
+            </a>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <form method="post">
+                    {% csrf_token %}
+
+                    <div class="row g-4">
+                        <!-- Left Column: OMR Detected Details & Image -->
+                        <div class="col-md-5">
+                            <div class="card bg-light border-0 p-3 mb-3">
+                                <h6 class="fw-bold text-secondary mb-3"><i class="fa fa-robot me-1"></i> ওএমআর ইঞ্জিন যা শনাক্ত করেছে:</h6>
+                                
+                                <div class="mb-2">
+                                    <span class="text-muted small">ডিটেক্টেড রোল নম্বর:</span>
+                                    <div class="fs-5 font-monospace fw-bold text-primary">
+                                        {{ result.student_numeric_id|default:"শনাক্ত হয়নি" }}
+                                    </div>
+                                </div>
+
+                                <div class="mb-2">
+                                    <span class="text-muted small">ডিটেক্টেড প্রশ্ন সেট:</span>
+                                    <div>
+                                        <span class="badge bg-primary fs-6">{{ result.exam_set|default:"N/A" }}</span>
+                                    </div>
+                                </div>
+
+                                <div class="mb-2">
+                                    <span class="text-muted small">মোট উত্তর দেওয়া প্রশ্ন:</span>
+                                    <div class="fw-bold">{{ result.answers_json|length }}/100</div>
+                                </div>
+
+                                {% if result.error_message %}
+                                <div class="alert alert-danger py-2 small mb-0 mt-2">
+                                    <i class="fa fa-exclamation-circle me-1"></i> {{ result.error_message }}
+                                </div>
+                                {% endif %}
+                            </div>
+
+                            {% if result.image_file %}
+                            <div class="text-center border rounded p-2 bg-white">
+                                <span class="text-muted small d-block mb-1">স্ক্যান কপি প্রিভিউ:</span>
+                                <a href="{{ result.image_file.url }}" target="_blank">
+                                    <img src="{{ result.image_file.url }}" class="img-fluid rounded shadow-sm" style="max-height: 380px; object-fit: contain;">
+                                </a>
+                                <div class="small text-muted mt-1"><i class="fa fa-search-plus"></i> বড় আকারে দেখতে ছবিতে ক্লিক করুন</div>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <!-- Right Column: Manual Assignment Form -->
+                        <div class="col-md-7">
+                            <h5 class="fw-bold text-dark mb-3"><i class="fa fa-user-check text-success me-1"></i> সঠিক শিক্ষার্থী নির্ধারণ করুন</h5>
+                            
+                            <!-- Searchable / Select Student -->
+                            <div class="mb-3">
+                                <label for="item_id" class="form-label fw-bold">
+                                    শিক্ষার্থী নির্বাচন করুন <span class="text-danger">*</span>
+                                </label>
+                                <input type="text" class="form-control mb-2" id="studentFilter" placeholder="🔍 নাম বা রেজিস্ট্রেশন নম্বর দিয়ে ফিল্টার করুন..." onkeyup="filterStudents()">
+                                
+                                <select class="form-select form-select-lg" id="item_id" name="item_id" size="8" required>
+                                    <option value="" disabled>-- শিক্ষার্থী নির্বাচন করুন --</option>
+                                    {% for s in enrolled_students %}
+                                        <option value="{{ s.item_id }}" {% if result.item_id == s.item_id %}selected{% endif %}>
+                                            {{ s.reg_no }} — {{ s.name }} (Roll: {{ s.class_role|default:'N/A' }})
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                                <div class="form-text">এই পরীক্ষার তালিকায় থাকা শিক্ষার্থীদের তালিকা থেকে নির্দিষ্ট শিক্ষার্থী নির্বাচন করুন।</div>
+                            </div>
+
+                            <!-- Exam Set Picker -->
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">প্রশ্ন সেট (Exam Set)</label>
+                                <div class="d-flex gap-3">
+                                    {% for s in "ABCD" %}
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="exam_set" id="set_{{ s }}" value="{{ s }}" {% if result.exam_set == s or not result.exam_set and s == 'A' %}checked{% endif %}>
+                                        <label class="form-check-label fw-bold" for="set_{{ s }}">Set {{ s }}</label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                <div class="form-text">সেট পরিবর্তন করলে সেই সেটের Answer Key অনুযায়ী নম্বর পুনরায় স্বয়ংক্রিয়ভাবে হিসাব হবে।</div>
+                            </div>
+
+                            <!-- Numeric ID Override -->
+                            <div class="mb-4">
+                                <label for="student_numeric_id" class="form-label fw-bold">রোল / রেজিস্ট্রেশনের সংখ্যা (Numeric ID)</label>
+                                <input type="text" class="form-control font-monospace" id="student_numeric_id" name="student_numeric_id" value="{{ result.student_numeric_id|default:'' }}" placeholder="যেমন: 264003">
+                            </div>
+
+                            <div class="d-flex gap-2">
+                                <button type="submit" class="btn btn-success btn-lg px-4">
+                                    <i class="fa fa-save me-1"></i> সংরক্ষণ ও নম্বর পুনর্মূল্যায়ন করুন
+                                </button>
+                                <a href="{% url 'dashboard:batch_detail' batch.id %}" class="btn btn-outline-secondary btn-lg">
+                                    বাতিল
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function filterStudents() {
+    const query = document.getElementById('studentFilter').value.toLowerCase();
+    const select = document.getElementById('item_id');
+    const options = select.options;
+    
+    for (let i = 0; i < options.length; i++) {
+        const text = options[i].text.toLowerCase();
+        if (text.includes(query) || options[i].value === "") {
+            options[i].style.display = "";
+        } else {
+            options[i].style.display = "none";
+        }
+    }
+}
+</script>
+{% endblock %}

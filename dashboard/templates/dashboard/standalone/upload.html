@@ -1,0 +1,281 @@
+{% extends 'dashboard/base.html' %}
+
+{% block title %}ওএমআর শিট আপলোড — {{ exam.title }} | OMR Engine{% endblock %}
+
+{% block extra_head %}
+<style>
+    .progress {
+        height: 28px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+    }
+    .log-table-container {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+            <div>
+                <nav aria-label="breadcrumb">
+                    <ol class="breadcrumb mb-1">
+                        <li class="breadcrumb-item"><a href="{% url 'dashboard:standalone_list' %}">অফলাইন পরীক্ষা</a></li>
+                        <li class="breadcrumb-item active">আপলোড</li>
+                    </ol>
+                </nav>
+                <h3 class="fw-bold mb-0">ওএমআর শিট আপলোড ও মূল্যায়ন</h3>
+                <p class="text-muted mb-0">পরীক্ষা: <strong>{{ exam.title }}</strong> | প্রশ্ন: <strong>{{ exam.total_questions }}টি</strong></p>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="{% url 'dashboard:standalone_answer_key' exam.id %}" class="btn btn-outline-secondary">
+                    <i class="fa fa-key me-1"></i> Answer Key
+                </a>
+                <a href="{% url 'dashboard:standalone_results' exam.id %}" class="btn btn-outline-primary">
+                    <i class="fa fa-list-ol me-1"></i> ফলাফল দেখুন
+                </a>
+            </div>
+        </div>
+
+        <!-- UPLOAD CARD -->
+        <div class="card shadow-sm mb-4" id="uploadConfigCard">
+            <div class="card-body p-4">
+                <label class="form-label fw-bold text-dark fs-5 mb-3">
+                    <i class="fa fa-folder-open text-primary me-2"></i>ওএমআর শিট নির্বাচন করুন:
+                </label>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="btn btn-outline-primary w-100 py-4 text-start h-100 shadow-sm">
+                            <i class="fa fa-folder-open fa-2x mb-2 text-primary d-block"></i>
+                            <h5 class="fw-bold mb-1">সম্পূর্ণ ফোল্ডার নির্বাচন করুন</h5>
+                            <div class="small text-muted">স্ক্যানার থেকে আসা ফোল্ডারের সকল ওএমআর শিট এক ক্লিকে লোড হবে</div>
+                            <input type="file" id="folderInput" webkitdirectory directory multiple accept="image/*" class="d-none" onchange="handleFileSelection(this)">
+                        </label>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="btn btn-outline-secondary w-100 py-4 text-start h-100 shadow-sm">
+                            <i class="fa fa-images fa-2x mb-2 text-secondary d-block"></i>
+                            <h5 class="fw-bold mb-1">এক বা একাধিক ফাইল নির্বাচন করুন</h5>
+                            <div class="small text-muted">নির্দিষ্ট ওএমআর শিটের ছবিসমূহ (JPG, PNG) নির্বাচন করুন</div>
+                            <input type="file" id="filesInput" multiple accept="image/*" class="d-none" onchange="handleFileSelection(this)">
+                        </label>
+                    </div>
+                </div>
+
+                <div id="fileSelectionAlert" class="alert alert-info py-2 d-none d-flex justify-content-between align-items-center mb-3">
+                    <span id="fileSelectionText"></span>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearSelectedFiles()">ক্লিয়ার</button>
+                </div>
+
+                <div class="d-grid mt-4">
+                    <button type="button" class="btn btn-primary btn-lg py-3 fw-bold" id="startProcessBtn" onclick="startProcessing()">
+                        <i class="fa fa-play-circle me-1"></i> ওএমআর শিট মূল্যায়ন শুরু করুন (Live Evaluation)
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- LIVE PROGRESS PANEL -->
+        <div class="card shadow-sm mb-4 d-none" id="progressPanel">
+            <div class="card-header bg-white py-3 border-0">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h4 class="fw-bold mb-0 text-primary" id="progressTitle">
+                            <i class="fa fa-spinner fa-spin me-2"></i>ওএমআর শিট মূল্যায়ন হচ্ছে...
+                        </h4>
+                        <div class="text-muted small" id="progressSubtitle">রোল ও সেট শনাক্ত করে নম্বর হিসাব করা হচ্ছে</div>
+                    </div>
+                    <div id="finishActions" class="d-none">
+                        <a href="{% url 'dashboard:standalone_results' exam.id %}" class="btn btn-success fw-bold">
+                            <i class="fa fa-trophy me-1"></i> মেরিট লিস্ট ও ফলাফল দেখুন
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body p-4 pt-0">
+
+                <div class="mb-3">
+                    <div class="progress shadow-sm">
+                        <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" style="width: 0%;">
+                            0%
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row g-2 text-center mb-4">
+                    <div class="col-4">
+                        <div class="border rounded p-2 bg-light">
+                            <div class="text-muted small">মোট শিট</div>
+                            <h4 class="fw-bold mb-0" id="statTotal">0</h4>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="border rounded p-2 bg-light">
+                            <div class="text-muted small">মূল্যায়ন সম্পন্ন</div>
+                            <h4 class="fw-bold text-success mb-0" id="statProcessed">0</h4>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="border rounded p-2 bg-light">
+                            <div class="text-muted small">ত্রুটি / অবমূল্যায়িত</div>
+                            <h4 class="fw-bold text-danger mb-0" id="statError">0</h4>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert alert-light border py-2 d-flex align-items-center mb-3">
+                    <div class="spinner-grow spinner-grow-sm text-primary me-2" role="status"></div>
+                    <span id="currentStatusText">শুরু হচ্ছে...</span>
+                </div>
+
+                <h6 class="fw-bold text-secondary mb-2"><i class="fa fa-list me-1"></i> লাইভ মূল্যায়ন লগ:</h6>
+                <div class="table-responsive log-table-container border rounded">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th style="width: 50px;">#</th>
+                                <th>ফাইলের নাম</th>
+                                <th>শনাক্ত রোল (Roll No)</th>
+                                <th>সেট</th>
+                                <th>সঠিক / ভুল</th>
+                                <th>প্রাপ্ত নম্বর</th>
+                                <th>মেরিট র্যাংক</th>
+                            </tr>
+                        </thead>
+                        <tbody id="liveResultsTbody"></tbody>
+                    </table>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let selectedFilesList = [];
+const examId = {{ exam.id }};
+
+function handleFileSelection(input) {
+    if (input.files && input.files.length > 0) {
+        const validExts = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff'];
+        selectedFilesList = Array.from(input.files).filter(f => {
+            const ext = '.' + f.name.split('.').pop().toLowerCase();
+            return validExts.includes(ext);
+        });
+
+        document.getElementById('fileSelectionAlert').classList.remove('d-none');
+        document.getElementById('fileSelectionText').innerHTML = `<i class="fa fa-check-circle text-success me-1"></i> মোট <strong>${selectedFilesList.length}</strong> টি বৈধ ইমেজ ফাইল নির্বাচিত হয়েছে।`;
+    }
+}
+
+function clearSelectedFiles() {
+    selectedFilesList = [];
+    document.getElementById('folderInput').value = '';
+    document.getElementById('filesInput').value = '';
+    document.getElementById('fileSelectionAlert').classList.add('d-none');
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+async function startProcessing() {
+    if (selectedFilesList.length === 0) {
+        alert('অনুগ্রহ করে অন্তত একটি ওএমআর ফাইল বা ফোল্ডার নির্বাচন করুন।');
+        return;
+    }
+
+    document.getElementById('uploadConfigCard').classList.add('d-none');
+    document.getElementById('progressPanel').classList.remove('d-none');
+
+    const total = selectedFilesList.length;
+    let processed = 0;
+    let errors = 0;
+
+    document.getElementById('statTotal').innerText = total;
+
+    for (let i = 0; i < total; i++) {
+        const file = selectedFilesList[i];
+        const percent = Math.round(((i) / total) * 100);
+        document.getElementById('progressBar').style.width = percent + '%';
+        document.getElementById('progressBar').innerText = `${percent}% (${i}/${total})`;
+        document.getElementById('currentStatusText').innerHTML = `<strong>মূল্যায়ন হচ্ছে (${i + 1}/${total}):</strong> ${file.name}`;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const resp = await fetch(`/dashboard/standalone/${examId}/upload-single-ajax/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCookie('csrftoken') },
+                body: formData
+            });
+            const data = await resp.json();
+
+            processed++;
+            if (data.error_message) errors++;
+
+            document.getElementById('statProcessed').innerText = processed;
+            document.getElementById('statError').innerText = errors;
+
+            appendLiveRow(processed, data);
+
+        } catch (err) {
+            console.error(err);
+            processed++;
+            errors++;
+            document.getElementById('statProcessed').innerText = processed;
+            document.getElementById('statError').innerText = errors;
+        }
+    }
+
+    // Complete
+    const bar = document.getElementById('progressBar');
+    bar.style.width = '100%';
+    bar.innerText = '১০০% মূল্যায়ন সম্পন্ন!';
+    bar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+    bar.classList.add('bg-success');
+
+    document.getElementById('progressTitle').innerHTML = '<i class="fa fa-check-circle text-success me-2"></i>সকল ওএমআর শিট সফলভাবে মূল্যায়িত হয়েছে!';
+    document.getElementById('progressSubtitle').innerText = `মোট ${total}টি শিট মূল্যায়িত হয়েছে।`;
+    document.getElementById('currentStatusText').innerHTML = '<strong>সম্পূর্ণ হয়েছে!</strong> মেরিট লিস্ট ও রেজাল্ট দেখতে নিচের বাটনে ক্লিক করুন।';
+    document.getElementById('finishActions').classList.remove('d-none');
+}
+
+function appendLiveRow(index, data) {
+    const tbody = document.getElementById('liveResultsTbody');
+    const tr = document.createElement('tr');
+    tr.className = data.error_message ? 'table-warning' : '';
+
+    tr.innerHTML = `
+        <td class="text-muted small">${index}</td>
+        <td><i class="fa fa-file-image text-primary me-1"></i> <span title="${data.filename}">${data.filename}</span></td>
+        <td><strong class="font-monospace fs-6 text-primary">${data.roll_no || 'N/A'}</strong></td>
+        <td><span class="badge bg-secondary">${data.exam_set || '-'}</span></td>
+        <td><span class="text-success">+${data.correct_count}</span> / <span class="text-danger">-${data.wrong_count}</span></td>
+        <td><strong class="${data.marks > 0 ? 'text-success' : 'text-muted'} fs-6">${data.marks}</strong></td>
+        <td><span class="badge bg-dark">#${data.rank || '-'}</span></td>
+    `;
+    tbody.prepend(tr);
+}
+</script>
+{% endblock %}

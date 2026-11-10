@@ -1,0 +1,68 @@
+{% extends 'dashboard/base.html' %}
+
+{% block title %}নতুন অফলাইন পরীক্ষা তৈরি | OMR Engine{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h3 class="fw-bold mb-0">নতুন স্ট্যান্ডঅ্যালোন পরীক্ষা</h3>
+                <p class="text-muted mb-0">এপিআই ছাড়া স্বাধীনভাবে ওএমআর পরীক্ষার মৌলিক তথ্য ও মার্কস নীতি নির্ধারণ করুন</p>
+            </div>
+            <a href="{% url 'dashboard:standalone_list' %}" class="btn btn-outline-secondary">
+                <i class="fa fa-arrow-left me-1"></i> ফিরে যান
+            </a>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <form method="post">
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label for="title" class="form-label fw-bold">পরীক্ষার নাম / শিরোনাম <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control form-control-lg" id="title" name="title" placeholder="যেমন: এইচএসসি মডেল টেস্ট - পদার্থবিজ্ঞান ০১" required>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label for="exam_date" class="form-label fw-bold">পরীক্ষার তারিখ</label>
+                            <input type="date" class="form-control" id="exam_date" name="exam_date">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="total_questions" class="form-label fw-bold">মোট প্রশ্নের সংখ্যা</label>
+                            <input type="number" class="form-control" id="total_questions" name="total_questions" value="100" min="1" max="100" required>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label for="correct_mark" class="form-label fw-bold">সঠিক উত্তরে নম্বর</label>
+                            <input type="number" step="0.05" class="form-control" id="correct_mark" name="correct_mark" value="1.0" required>
+                            <div class="form-text">প্রতিটি সঠিক উত্তরের জন্য কত যোগ হবে (ডিফল্ট: ১.০)</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="wrong_mark" class="form-label fw-bold">ভুল উত্তরে কর্তন (নেগেটিভ)</label>
+                            <input type="number" step="0.05" class="form-control" id="wrong_mark" name="wrong_mark" value="-0.25" required>
+                            <div class="form-text">প্রতিটি ভুল উত্তরে কত কাটা যাবে (যেমন: -০.২৫)</div>
+                        </div>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg fw-bold">
+                            পরবর্তী: Answer Key সেট করুন <i class="fa fa-arrow-right ms-1"></i>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('exam_date').valueAsDate = new Date();
+</script>
+{% endblock %}

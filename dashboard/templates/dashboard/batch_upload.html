@@ -1,0 +1,583 @@
+{% extends 'dashboard/base.html' %}
+
+{% block title %}ওএমআর ব্যাচ আপলোড ও প্রসেসিং | OMR Engine{% endblock %}
+
+{% block extra_head %}
+<style>
+    .progress {
+        height: 28px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+    }
+    .upload-mode-card {
+        cursor: pointer;
+        transition: all 0.2s ease-in-out;
+        border: 2px solid #e9ecef;
+    }
+    .upload-mode-card:hover, .upload-mode-card.active {
+        border-color: #0d6efd;
+        background-color: #f8faff;
+    }
+    .log-table-container {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h3 class="fw-bold mb-0">ওএমআর ব্যাচ স্ক্যান ও রিয়েলটাইম প্রসেসিং</h3>
+                <p class="text-muted mb-0">নতুন ব্যাচ তৈরি করুন অথবা বিদ্যমান ব্যাচে বাদ পড়া নতুন ফাইল যুক্ত করুন</p>
+            </div>
+            <a href="{% url 'dashboard:batch_list' %}" class="btn btn-outline-secondary">
+                <i class="fa fa-list me-1"></i> সকল ব্যাচ
+            </a>
+        </div>
+
+        <!-- UPLOAD CONFIG CARD -->
+        <div class="card shadow-sm mb-4" id="uploadConfigCard">
+            <div class="card-body p-4">
+                
+                <!-- BATCH SELECTION MODE -->
+                <div class="mb-4">
+                    <label class="form-label fw-bold text-dark fs-5">
+                        <i class="fa fa-layer-group text-primary me-1"></i> ১. ব্যাচ নির্ধারণ করুন:
+                    </label>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="card p-3 upload-mode-card active" id="modeCardNew" onclick="setBatchMode('new')">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="batchMode" id="batchModeNew" value="new" checked>
+                                    <label class="form-check-label fw-bold" for="batchModeNew">
+                                        নতুন ব্যাচ তৈরি করুন
+                                    </label>
+                                    <div class="small text-muted mt-1">একটি নতুন পরীক্ষার জন্য নতুন ব্যাচ শুরু হবে</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card p-3 upload-mode-card" id="modeCardExisting" onclick="setBatchMode('existing')">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="batchMode" id="batchModeExisting" value="existing">
+                                    <label class="form-check-label fw-bold" for="batchModeExisting">
+                                        বিদ্যমান ব্যাচে আরও ফাইল যোগ করুন (Append)
+                                    </label>
+                                    <div class="small text-muted mt-1">পূর্বের কোনো ব্যাচে বাদ পড়া ফাইল যুক্ত করতে এটি বাছুন</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- NEW BATCH INPUT -->
+                <div class="mb-4 p-3 bg-light rounded" id="newBatchSection">
+                    <label for="class_test_id" class="form-label fw-bold">
+                        <i class="fa fa-graduation-cap text-primary me-1"></i> লারাভেল Class Test ID <span class="text-danger">*</span>
+                    </label>
+                    <input type="number" class="form-control form-control-lg" id="class_test_id" placeholder="যেমন: 1, 15...">
+                    <div class="form-text">লারাভেলের <code>admin/classTest</code> থেকে Class Test ID লিখুন। স্বয়ংক্রিয়ভাবে ঐ টেস্টের শিক্ষার্থী ও Answer Key লোড হবে।</div>
+                </div>
+
+                <!-- EXISTING BATCH SELECTOR -->
+                <div class="mb-4 p-3 bg-light rounded d-none" id="existingBatchSection">
+                    <label for="existing_batch_id" class="form-label fw-bold">
+                        <i class="fa fa-folder-open text-warning me-1"></i> বিদ্যমান ব্যাচ নির্বাচন করুন <span class="text-danger">*</span>
+                    </label>
+                    <select class="form-select form-select-lg" id="existing_batch_id">
+                        <option value="" disabled selected>-- একটি ব্যাচ নির্বাচন করুন --</option>
+                        {% for b in existing_batches %}
+                            <option value="{{ b.id }}">
+                                Batch #{{ b.id }} — {{ b.exam_title|default:'Class Test' }} (Class Test ID: {{ b.class_test_id }}) — মোট শিট: {{ b.total_files }}টি
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">নির্বাচিত এই ব্যাচেই নতুন ফাইলগুলো যুক্ত হবে এবং বিদ্যমান ফলাফলের সাথে একত্রিত হবে।</div>
+                </div>
+
+                <hr class="my-4">
+
+                <!-- FILE INPUT SECTION -->
+                <div class="mb-4">
+                    <label class="form-label fw-bold text-dark fs-5">
+                        <i class="fa fa-images text-success me-1"></i> ২. ওএমআর শিট নির্বাচন করুন:
+                    </label>
+
+                    <!-- TAB SELECTOR FOR FILES VS LOCAL FOLDER -->
+                    <ul class="nav nav-tabs mb-3" id="inputTab" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active fw-bold" id="browserFiles-tab" data-bs-toggle="tab" data-bs-target="#browserFilesTab" type="button" role="tab">
+                                <i class="fa fa-cloud-upload-alt me-1"></i> ফোল্ডার বা ফাইল আপলোড
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link fw-bold" id="serverFolder-tab" data-bs-toggle="tab" data-bs-target="#serverFolderTab" type="button" role="tab">
+                                <i class="fa fa-hdd me-1"></i> পিসির লোকাল ফোল্ডার পাথ
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content" id="inputTabContent">
+                        <!-- TAB 1: Browser File/Folder Upload -->
+                        <div class="tab-pane fade show active" id="browserFilesTab" role="tabpanel">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="btn btn-outline-primary w-100 py-3 text-start h-100">
+                                        <i class="fa fa-folder-open fa-2x mb-2 text-primary d-block"></i>
+                                        <strong>সম্পূর্ণ ফোল্ডার নির্বাচন করুন</strong>
+                                        <div class="small text-muted">ফোল্ডারের সব স্ক্যান কপি স্বয়ংক্রিয়ভাবে লোড হবে</div>
+                                        <input type="file" id="folderInput" webkitdirectory directory multiple accept="image/*" class="d-none" onchange="handleFileSelection(this)">
+                                    </label>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="btn btn-outline-secondary w-100 py-3 text-start h-100">
+                                        <i class="fa fa-images fa-2x mb-2 text-secondary d-block"></i>
+                                        <strong>একাধিক ফাইল নির্বাচন করুন</strong>
+                                        <div class="small text-muted">নির্দিষ্ট ওএমআর শিটের ছবিসমূহ সিলেক্ট করুন</div>
+                                        <input type="file" id="filesInput" multiple accept="image/*" class="d-none" onchange="handleFileSelection(this)">
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- TAB 2: Server Local Folder Path -->
+                        <div class="tab-pane fade" id="serverFolderTab" role="tabpanel">
+                            <div class="p-3 bg-light rounded">
+                                <label for="server_folder" class="form-label fw-bold">কম্পিউটারের লোকাল ফোল্ডার পাথ লিখুন:</label>
+                                <input type="text" class="form-control" id="server_folder" placeholder="যেমন: D:\scans\classTest12">
+                                <div class="form-text">স্ক্যানার সরাসরি পিসির কোনো ফোল্ডারে ইমেজ রাখলে সেই ফোল্ডার পাথ দিন।</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- File Selection Summary Badge -->
+                    <div id="fileSelectionAlert" class="alert alert-info mt-3 py-2 d-none d-flex justify-content-between align-items-center">
+                        <span id="fileSelectionText"></span>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearSelectedFiles()">ফাইল ক্লিয়ার করুন</button>
+                    </div>
+                </div>
+
+                <div class="d-grid mt-4">
+                    <button type="button" class="btn btn-primary btn-lg py-3 fw-bold" id="startProcessBtn" onclick="startProcessing()">
+                        <i class="fa fa-play-circle me-1"></i> ওএমআর প্রসেসিং শুরু করুন (Live Progress)
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- REAL-TIME PROGRESS PANEL (Shown during and after processing) -->
+        <div class="card shadow-sm mb-4 d-none" id="progressPanel">
+            <div class="card-header bg-white py-3 border-0">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h4 class="fw-bold mb-0 text-primary" id="progressTitle">
+                            <i class="fa fa-spinner fa-spin me-2"></i>ওএমআর মূল্যায়ন চলছে...
+                        </h4>
+                        <div class="text-muted small" id="progressSubtitle">প্রসেসিং হচ্ছে, প্রতিটি শিট এক এক করে মূল্যায়ন করা হচ্ছে</div>
+                    </div>
+                    <div id="finishActions" class="d-none">
+                        <a href="#" id="viewBatchBtn" class="btn btn-success fw-bold">
+                            <i class="fa fa-check-circle me-1"></i> ফলাফল বিস্তারিত দেখুন
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body p-4 pt-0">
+
+                <!-- Progress Bar -->
+                <div class="mb-3">
+                    <div class="progress shadow-sm">
+                        <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" style="width: 0%;">
+                            0%
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Counters -->
+                <div class="row g-2 text-center mb-4">
+                    <div class="col-3">
+                        <div class="border rounded p-2 bg-light">
+                            <div class="text-muted small">মোট ফাইল</div>
+                            <h4 class="fw-bold mb-0" id="statTotal">0</h4>
+                        </div>
+                    </div>
+                    <div class="col-3">
+                        <div class="border rounded p-2 bg-light">
+                            <div class="text-muted small">প্রসেস সম্পন্ন</div>
+                            <h4 class="fw-bold text-primary mb-0" id="statProcessed">0</h4>
+                        </div>
+                    </div>
+                    <div class="col-3">
+                        <div class="border rounded p-2 bg-light">
+                            <div class="text-muted small">ম্যাচড</div>
+                            <h4 class="fw-bold text-success mb-0" id="statMatched">0</h4>
+                        </div>
+                    </div>
+                    <div class="col-3">
+                        <div class="border rounded p-2 bg-light">
+                            <div class="text-muted small">আনম্যাচড</div>
+                            <h4 class="fw-bold text-danger mb-0" id="statUnmatched">0</h4>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Current Action Display -->
+                <div class="alert alert-light border py-2 d-flex align-items-center mb-3">
+                    <div class="spinner-grow spinner-grow-sm text-primary me-2" role="status"></div>
+                    <span id="currentStatusText">শুরু হচ্ছে...</span>
+                </div>
+
+                <!-- Real-time Live Log Table -->
+                <h6 class="fw-bold text-secondary mb-2"><i class="fa fa-list me-1"></i> প্রসেসিং লাইভ লগ:</h6>
+                <div class="table-responsive log-table-container border rounded">
+                    <table class="table table-sm table-hover align-middle mb-0" id="liveResultsTable">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th style="width: 50px;">#</th>
+                                <th>ফাইলের নাম</th>
+                                <th>রোল (OMR)</th>
+                                <th>সেট</th>
+                                <th>শিক্ষার্থী (লারাভেল)</th>
+                                <th>নম্বর</th>
+                                <th>স্ট্যাটাস</th>
+                            </tr>
+                        </thead>
+                        <tbody id="liveResultsTbody">
+                            <!-- Rows added dynamically via JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let selectedFilesList = [];
+let currentBatchId = null;
+let isProcessing = false;
+
+// 1. Toggle between "New Batch" and "Existing Batch"
+function setBatchMode(mode) {
+    document.querySelectorAll('.upload-mode-card').forEach(c => c.classList.remove('active'));
+    if (mode === 'new') {
+        document.getElementById('batchModeNew').checked = true;
+        document.getElementById('modeCardNew').classList.add('active');
+        document.getElementById('newBatchSection').classList.remove('d-none');
+        document.getElementById('existingBatchSection').classList.add('d-none');
+    } else {
+        document.getElementById('batchModeExisting').checked = true;
+        document.getElementById('modeCardExisting').classList.add('active');
+        document.getElementById('newBatchSection').classList.add('d-none');
+        document.getElementById('existingBatchSection').classList.remove('d-none');
+    }
+}
+
+// 2. Handle File Selection
+function handleFileSelection(input) {
+    if (input.files && input.files.length > 0) {
+        selectedFilesList = Array.from(input.files);
+        // Filter only images
+        const validExts = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff'];
+        selectedFilesList = selectedFilesList.filter(f => {
+            const ext = '.' + f.name.split('.').pop().toLowerCase();
+            return validExts.includes(ext);
+        });
+
+        const alertBox = document.getElementById('fileSelectionAlert');
+        const textSpan = document.getElementById('fileSelectionText');
+        alertBox.classList.remove('d-none');
+        textSpan.innerHTML = `<i class="fa fa-check-circle text-success me-1"></i> মোট <strong>${selectedFilesList.length}</strong> টি বৈধ ইমেজ ফাইল নির্বাচিত হয়েছে।`;
+    }
+}
+
+function clearSelectedFiles() {
+    selectedFilesList = [];
+    document.getElementById('folderInput').value = '';
+    document.getElementById('filesInput').value = '';
+    document.getElementById('fileSelectionAlert').classList.add('d-none');
+}
+
+// Helper: Get CSRF Cookie
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// 3. Start AJAX Processing Pipeline
+async function startProcessing() {
+    if (isProcessing) return;
+
+    const mode = document.querySelector('input[name="batchMode"]:checked').value;
+    const activeTab = document.querySelector('#inputTab .nav-link.active').id;
+    const isServerFolder = (activeTab === 'serverFolder-tab');
+    const serverFolderInput = document.getElementById('server_folder').value.trim();
+
+    if (!isServerFolder && selectedFilesList.length === 0) {
+        alert('অনুগ্রহ করে অন্তত একটি ওএমআর ইমেজ ফাইল বা ফোল্ডার নির্বাচন করুন।');
+        return;
+    }
+    if (isServerFolder && !serverFolderInput) {
+        alert('অনুগ্রহ করে পিসির লোকাল ফোল্ডার পাথটি লিখুন।');
+        return;
+    }
+
+    // Step A: Initialize or Verify Batch
+    const createFormData = new FormData();
+    createFormData.append('mode', mode);
+    if (mode === 'new') {
+        const classTestId = document.getElementById('class_test_id').value.trim();
+        if (!classTestId) {
+            alert('অনুগ্রহ করে Class Test ID লিখুন।');
+            return;
+        }
+        createFormData.append('class_test_id', classTestId);
+    } else {
+        const existingBatchId = document.getElementById('existing_batch_id').value;
+        if (!existingBatchId) {
+            alert('অনুগ্রহ করে একটি বিদ্যমান ব্যাচ নির্বাচন করুন।');
+            return;
+        }
+        createFormData.append('batch_id', existingBatchId);
+    }
+
+    document.getElementById('startProcessBtn').disabled = true;
+    document.getElementById('startProcessBtn').innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> ব্যাচ প্রস্তুত হচ্ছে...';
+
+    try {
+        const initResp = await fetch("{% url 'dashboard:batch_create_ajax' %}", {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: createFormData
+        });
+        const initData = await initResp.json();
+
+        if (!initData.success) {
+            alert('এরর: ' + (initData.error || 'ব্যাচ তৈরি করতে ব্যর্থ'));
+            document.getElementById('startProcessBtn').disabled = false;
+            document.getElementById('startProcessBtn').innerHTML = '<i class="fa fa-play-circle me-1"></i> ওএমআর প্রসেসিং শুরু করুন';
+            return;
+        }
+
+        currentBatchId = initData.batch_id;
+        isProcessing = true;
+
+        // Switch to progress view
+        document.getElementById('uploadConfigCard').classList.add('d-none');
+        document.getElementById('progressPanel').classList.remove('d-none');
+        document.getElementById('viewBatchBtn').href = `/dashboard/batch/${currentBatchId}/`;
+
+        // Step B: Dispatch Files
+        if (!isServerFolder) {
+            await processBrowserFilesQueue();
+        } else {
+            await processServerFolderQueue(serverFolderInput);
+        }
+
+    } catch (err) {
+        console.error(err);
+        alert('নেটওয়ার্ক বা সার্ভার ত্রুটি: ' + err.message);
+        document.getElementById('startProcessBtn').disabled = false;
+        document.getElementById('startProcessBtn').innerHTML = '<i class="fa fa-play-circle me-1"></i> ওএমআর প্রসেসিং শুরু করুন';
+    }
+}
+
+// Queue for browser selected files
+async function processBrowserFilesQueue() {
+    const total = selectedFilesList.length;
+    let processed = 0;
+    let matched = 0;
+    let unmatched = 0;
+
+    document.getElementById('statTotal').innerText = total;
+
+    for (let i = 0; i < total; i++) {
+        const file = selectedFilesList[i];
+        const percent = Math.round(((i) / total) * 100);
+        updateProgressBar(percent, `${percent}% (${i} of ${total} files)`);
+        document.getElementById('currentStatusText').innerHTML = `<strong>প্রসেসিং হচ্ছে (${i + 1}/${total}):</strong> ${file.name}`;
+
+        const fileFormData = new FormData();
+        fileFormData.append('file', file);
+
+        try {
+            const resp = await fetch(`/dashboard/batch/${currentBatchId}/upload-single-ajax/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCookie('csrftoken') },
+                body: fileFormData
+            });
+            const data = await resp.json();
+
+            processed++;
+            if (data.is_matched) matched++;
+            else unmatched++;
+
+            appendLiveRow(processed, data);
+            document.getElementById('statProcessed').innerText = processed;
+            document.getElementById('statMatched').innerText = matched;
+            document.getElementById('statUnmatched').innerText = unmatched;
+
+        } catch (err) {
+            console.error(err);
+            processed++;
+            unmatched++;
+            appendLiveRow(processed, {
+                filename: file.name,
+                student_numeric_id: 'Error',
+                exam_set: '-',
+                student_name: 'প্রসেসিং ত্রুটি',
+                marks: 0,
+                status: 'error',
+                error_message: err.message
+            });
+        }
+    }
+
+    // Complete!
+    finalizeProgress(total, matched, unmatched);
+}
+
+// Queue for server local folder
+async function processServerFolderQueue(folderPath) {
+    document.getElementById('currentStatusText').innerHTML = 'ফোল্ডারের ফাইল তালিকা স্ক্যান করা হচ্ছে...';
+
+    const scanFormData = new FormData();
+    scanFormData.append('server_folder', folderPath);
+
+    const scanResp = await fetch(`/dashboard/batch/${currentBatchId}/scan-folder-ajax/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': getCookie('csrftoken') },
+        body: scanFormData
+    });
+    const scanData = await scanResp.json();
+
+    if (!scanData.success || scanData.items.length === 0) {
+        alert(scanData.error || 'ফোল্ডারে কোনো ছবি পাওয়া যায়নি।');
+        location.reload();
+        return;
+    }
+
+    const items = scanData.items;
+    const total = items.length;
+    let processed = 0;
+    let matched = 0;
+    let unmatched = 0;
+
+    document.getElementById('statTotal').innerText = total;
+
+    for (let i = 0; i < total; i++) {
+        const item = items[i];
+        const percent = Math.round(((i) / total) * 100);
+        updateProgressBar(percent, `${percent}% (${i} of ${total} files)`);
+        document.getElementById('currentStatusText').innerHTML = `<strong>প্রসেসিং হচ্ছে (${i + 1}/${total}):</strong> ${item.filename}`;
+
+        const itemFormData = new FormData();
+        itemFormData.append('fpath', item.fpath);
+
+        try {
+            const resp = await fetch(`/dashboard/batch/${currentBatchId}/process-item-ajax/${item.scan_id}/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCookie('csrftoken') },
+                body: itemFormData
+            });
+            const data = await resp.json();
+
+            processed++;
+            if (data.is_matched) matched++;
+            else unmatched++;
+
+            appendLiveRow(processed, data);
+            document.getElementById('statProcessed').innerText = processed;
+            document.getElementById('statMatched').innerText = matched;
+            document.getElementById('statUnmatched').innerText = unmatched;
+
+        } catch (err) {
+            console.error(err);
+            processed++;
+            unmatched++;
+            appendLiveRow(processed, {
+                filename: item.filename,
+                student_numeric_id: 'Error',
+                exam_set: '-',
+                student_name: 'প্রসেসিং ত্রুটি',
+                marks: 0,
+                status: 'error',
+                error_message: err.message
+            });
+        }
+    }
+
+    finalizeProgress(total, matched, unmatched);
+}
+
+function updateProgressBar(percent, text) {
+    const bar = document.getElementById('progressBar');
+    bar.style.width = percent + '%';
+    bar.innerText = text;
+}
+
+function finalizeProgress(total, matched, unmatched) {
+    updateProgressBar(100, '১০০% সম্পন্ন!');
+    const bar = document.getElementById('progressBar');
+    bar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+    bar.classList.add('bg-success');
+
+    document.getElementById('progressTitle').innerHTML = '<i class="fa fa-check-circle text-success me-2"></i>সকল ওএমআর শিট সফলভাবে মূল্যায়িত হয়েছে!';
+    document.getElementById('progressSubtitle').innerText = `মোট ${total}টি ফাইল প্রসেস করা হয়েছে। ম্যাচড: ${matched}, আনম্যাচড: ${unmatched}`;
+    document.getElementById('currentStatusText').innerHTML = '<strong>সম্পূর্ণ হয়েছে!</strong> নিচের ফলাফল পর্যালোচনা করুন অথবা বিস্তারিত পেজে যান।';
+    document.getElementById('finishActions').classList.remove('d-none');
+    isProcessing = false;
+}
+
+function appendLiveRow(index, data) {
+    const tbody = document.getElementById('liveResultsTbody');
+    const tr = document.createElement('tr');
+    tr.className = data.is_matched ? '' : 'table-warning';
+
+    let studentDisplay = '';
+    if (data.is_matched) {
+        studentDisplay = `<strong>${data.student_name}</strong> <span class="badge bg-light text-dark font-monospace">${data.student_reg_no}</span>`;
+    } else {
+        studentDisplay = `<span class="text-danger fw-bold"><i class="fa fa-times-circle"></i> আনম্যাচড</span> <small class="text-muted d-block">${data.error_message || ''}</small>`;
+    }
+
+    let statusBadge = '';
+    if (data.is_matched) {
+        statusBadge = '<span class="badge bg-success">ম্যাচড</span>';
+    } else if (data.status === 'error') {
+        statusBadge = '<span class="badge bg-danger">ত্রুটি</span>';
+    } else {
+        statusBadge = '<span class="badge bg-warning text-dark">আনম্যাচড</span>';
+    }
+
+    tr.innerHTML = `
+        <td class="text-muted small">${index}</td>
+        <td><i class="fa fa-file-image text-primary me-1"></i> <span title="${data.filename}">${data.filename}</span></td>
+        <td><span class="badge bg-secondary font-monospace">${data.student_numeric_id || 'N/A'}</span></td>
+        <td><span class="badge bg-primary">${data.exam_set || '-'}</span></td>
+        <td>${studentDisplay}</td>
+        <td><strong class="${data.marks > 0 ? 'text-success' : 'text-muted'}">${data.marks}</strong></td>
+        <td>${statusBadge}</td>
+    `;
+    tbody.prepend(tr); // newest on top
+}
+</script>
+{% endblock %}

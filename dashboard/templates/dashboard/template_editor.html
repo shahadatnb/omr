@@ -1,0 +1,463 @@
+{% extends 'dashboard/base.html' %}
+
+{% block title %}ওএমআর টেমপ্লেট এডিটর | Admission Challenge{% endblock %}
+
+{% block extra_head %}
+<style>
+    .canvas-container {
+        position: relative;
+        background-color: #555;
+        border-radius: 8px;
+        overflow: auto;
+        max-height: 85vh;
+        box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+        text-align: center;
+        padding: 10px;
+    }
+    #omrCanvas {
+        background-color: #fff;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        cursor: crosshair;
+        max-width: 100%;
+        height: auto;
+    }
+    .coord-card {
+        border-left: 4px solid #0d6efd;
+    }
+    .coord-card.set-card {
+        border-left-color: #198754;
+    }
+    .coord-card.col-card {
+        border-left-color: #6f42c1;
+    }
+    .legend-box {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        margin-right: 6px;
+        border-radius: 3px;
+        vertical-align: middle;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h3 class="fw-bold mb-0">
+            <i class="fa fa-sliders-h text-warning me-2"></i>ওএমআর টেমপ্লেট কনফিগারেশন ও এডিটর
+        </h3>
+        <p class="text-muted mb-0">OMR শিটের রোল, সেট এবং ১০০ প্রশ্নের উত্তর কলামের স্থানাঙ্ক (Coordinates) সমন্বয় করুন</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-primary" onclick="testCoordinates()">
+            <i class="fa fa-vial me-1"></i> নমুনা শিটে টেস্ট করুন
+        </button>
+        <button type="button" class="btn btn-success fw-bold" onclick="saveTemplateForm()">
+            <i class="fa fa-save me-1"></i> টেমপ্লেট সংরক্ষণ করুন
+        </button>
+    </div>
+</div>
+
+<form id="templateForm" method="post" action="{% url 'dashboard:template_editor' %}">
+    {% csrf_token %}
+    <input type="hidden" name="template_json" id="templateJsonInput">
+
+    <div class="row g-3">
+        <!-- LEFT COLUMN: INTERACTIVE CANVAS -->
+        <div class="col-lg-7">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+                    <div class="small">
+                        <span class="legend-box" style="background:#0d6efd;"></span><strong class="me-2">রোল গ্রিড</strong>
+                        <span class="legend-box" style="background:#198754;"></span><strong class="me-2">সেট বাবল</strong>
+                        <span class="legend-box" style="background:#6f42c1;"></span><strong class="me-2">উত্তর কলাম ১-৪</strong>
+                    </div>
+                    <div class="btn-group btn-group-sm">
+                        <button type="button" class="btn btn-outline-secondary" onclick="zoomCanvas(0.8)">-</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="zoomCanvas(1.0)">১০০%</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="zoomCanvas(1.2)">+</button>
+                    </div>
+                </div>
+                <div class="card-body p-2 bg-dark rounded-bottom canvas-container text-center">
+                    <canvas id="omrCanvas" width="794" height="1123"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT COLUMN: COORDINATE INPUT CONTROLS -->
+        <div class="col-lg-5" style="max-height: 85vh; overflow-y: auto;">
+            
+            <!-- 1. ROLL / ID GRID -->
+            <div class="card shadow-sm mb-3 coord-card">
+                <div class="card-body p-3">
+                    <h6 class="fw-bold text-primary mb-2">
+                        <i class="fa fa-id-card me-1"></i> ১. রেজিস্ট্রেশন / রোল নম্বর গ্রিড (ID Grid)
+                    </h6>
+                    <div class="row g-2 mb-2">
+                        <div class="col-3">
+                            <label class="form-label small mb-1">X (বাম)</label>
+                            <input type="number" class="form-control form-control-sm" id="id_x" value="{{ template_data.id_grid.x|default:570 }}" oninput="redrawCanvas()">
+                        </div>
+                        <div class="col-3">
+                            <label class="form-label small mb-1">Y (উপর)</label>
+                            <input type="number" class="form-control form-control-sm" id="id_y" value="{{ template_data.id_grid.y|default:70 }}" oninput="redrawCanvas()">
+                        </div>
+                        <div class="col-3">
+                            <label class="form-label small mb-1">Width (প্রস্থ)</label>
+                            <input type="number" class="form-control form-control-sm" id="id_w" value="{{ template_data.id_grid.w|default:190 }}" oninput="redrawCanvas()">
+                        </div>
+                        <div class="col-3">
+                            <label class="form-label small mb-1">Height (উচ্চতা)</label>
+                            <input type="number" class="form-control form-control-sm" id="id_h" value="{{ template_data.id_grid.h|default:293 }}" oninput="redrawCanvas()">
+                        </div>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label small mb-1">কলাম সংখ্যা (ডিজিট)</label>
+                            <input type="number" class="form-control form-control-sm" id="id_cols" value="{{ template_data.id_grid.columns|default:6 }}" oninput="redrawCanvas()">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small mb-1">সারি সংখ্যা (০-৯)</label>
+                            <input type="number" class="form-control form-control-sm" id="id_rows" value="{{ template_data.id_grid.rows|default:10 }}" oninput="redrawCanvas()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. EXAM SET REGION -->
+            <div class="card shadow-sm mb-3 coord-card set-card">
+                <div class="card-body p-3">
+                    <h6 class="fw-bold text-success mb-2">
+                        <i class="fa fa-font me-1"></i> ২. প্রশ্ন সেট বাবল (A, B, C, D)
+                    </h6>
+                    <div class="row g-2">
+                        <div class="col-3">
+                            <label class="form-label small mb-1">X (বাম)</label>
+                            <input type="number" class="form-control form-control-sm" id="set_x" value="{{ template_data.set_region.x|default:516 }}" oninput="redrawCanvas()">
+                        </div>
+                        <div class="col-3">
+                            <label class="form-label small mb-1">Y (উপর)</label>
+                            <input type="number" class="form-control form-control-sm" id="set_y" value="{{ template_data.set_region.y|default:70 }}" oninput="redrawCanvas()">
+                        </div>
+                        <div class="col-3">
+                            <label class="form-label small mb-1">Width (প্রস্থ)</label>
+                            <input type="number" class="form-control form-control-sm" id="set_w" value="{{ template_data.set_region.w|default:34 }}" oninput="redrawCanvas()">
+                        </div>
+                        <div class="col-3">
+                            <label class="form-label small mb-1">Height (উচ্চতা)</label>
+                            <input type="number" class="form-control form-control-sm" id="set_h" value="{{ template_data.set_region.h|default:129 }}" oninput="redrawCanvas()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. ANSWER COLUMNS -->
+            <div class="card shadow-sm mb-3 coord-card col-card">
+                <div class="card-body p-3">
+                    <h6 class="fw-bold text-purple mb-2" style="color: #6f42c1;">
+                        <i class="fa fa-list-ol me-1"></i> ৩. উত্তর কলামসমূহ (১০০ প্রশ্ন)
+                    </h6>
+
+                    <!-- Col 1 -->
+                    <div class="mb-2 p-2 bg-light rounded">
+                        <div class="fw-bold small mb-1 text-primary">কলাম ১ (প্রশ্ন ১ – ২৫):</div>
+                        <div class="row g-2">
+                            <div class="col-3"><label class="small text-muted">X</label><input type="number" class="form-control form-control-sm" id="col1_x" value="78" oninput="redrawCanvas()"></div>
+                            <div class="col-3"><label class="small text-muted">Y</label><input type="number" class="form-control form-control-sm" id="col1_y" value="490" oninput="redrawCanvas()"></div>
+                            <div class="col-3"><label class="small text-muted">W</label><input type="number" class="form-control form-control-sm" id="col1_w" value="128" oninput="redrawCanvas()"></div>
+                            <div class="col-3"><label class="small text-muted">H</label><input type="number" class="form-control form-control-sm" id="col1_h" value="617" oninput="redrawCanvas()"></div>
+                        </div>
+                    </div>
+
+                    <!-- Col 2 -->
+                    <div class="mb-2 p-2 bg-light rounded">
+                        <div class="fw-bold small mb-1 text-primary">কলাম ২ (প্রশ্ন ২৬ – ৫০):</div>
+                        <div class="row g-2">
+                            <div class="col-3"><label class="small text-muted">X</label><input type="number" class="form-control form-control-sm" id="col2_x" value="264" oninput="redrawCanvas()"></div>
+                            <div class="col-3"><label class="small text-muted">Y</label><input type="number" class="form-control form-control-sm" id="col2_y" value="489" oninput="redrawCanvas()"></div>
+                            <div class="col-3"><label class="small text-muted">W</label><input type="number" class="form-control form-control-sm" id="col2_w" value="128" oninput="redrawCanvas()"></div>
+                            <div class="col-3"><label class="small text-muted">H</label><input type="number" class="form-control form-control-sm" id="col2_h" value="618" oninput="redrawCanvas()"></div>
+                        </div>
+                    </div>
+
+                    <!-- Col 3 -->
+                    <div class="mb-2 p-2 bg-light rounded">
+                        <div class="fw-bold small mb-1 text-primary">কলাম ৩ (প্রশ্ন ৫১ – ৭৫):</div>
+                        <div class="row g-2">
+                            <div class="col-3"><label class="small text-muted">X</label><input type="number" class="form-control form-control-sm" id="col3_x" value="448" oninput="redrawCanvas()"></div>
+                            <div class="col-3"><label class="small text-muted">Y</label><input type="number" class="form-control form-control-sm" id="col3_y" value="493" oninput="redrawCanvas()"></div>
+                            <div class="col-3"><label class="small text-muted">W</label><input type="number" class="form-control form-control-sm" id="col3_w" value="128" oninput="redrawCanvas()"></div>
+                            <div class="col-3"><label class="small text-muted">H</label><input type="number" class="form-control form-control-sm" id="col3_h" value="614" oninput="redrawCanvas()"></div>
+                        </div>
+                    </div>
+
+                    <!-- Col 4 -->
+                    <div class="mb-2 p-2 bg-light rounded">
+                        <div class="fw-bold small mb-1 text-primary">কলাম ৪ (প্রশ্ন ৭৬ – ১০০):</div>
+                        <div class="row g-2">
+                            <div class="col-3"><label class="small text-muted">X</label><input type="number" class="form-control form-control-sm" id="col4_x" value="633" oninput="redrawCanvas()"></div>
+                            <div class="col-3"><label class="small text-muted">Y</label><input type="number" class="form-control form-control-sm" id="col4_y" value="494" oninput="redrawCanvas()"></div>
+                            <div class="col-3"><label class="small text-muted">W</label><input type="number" class="form-control form-control-sm" id="col4_w" value="128" oninput="redrawCanvas()"></div>
+                            <div class="col-3"><label class="small text-muted">H</label><input type="number" class="form-control form-control-sm" id="col4_h" value="613" oninput="redrawCanvas()"></div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- TEST RESULT ALERT BOX -->
+            <div id="testResultBox" class="alert alert-secondary py-3 d-none">
+                <h6 class="fw-bold mb-2"><i class="fa fa-chart-bar me-1"></i> টেস্ট রেজাল্ট:</h6>
+                <div id="testResultDetails" class="small"></div>
+            </div>
+
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const bgImage = new Image();
+bgImage.src = "{{ sample_image_url }}";
+
+const canvas = document.getElementById('omrCanvas');
+const ctx = canvas.getContext('2d');
+let currentScale = 1.0;
+
+// Set initial answer column values from template_data if available
+const templateData = {{ template_json_str|safe }};
+if (templateData && templateData.answer_columns && templateData.answer_columns.length >= 4) {
+    document.getElementById('col1_x').value = templateData.answer_columns[0].x;
+    document.getElementById('col1_y').value = templateData.answer_columns[0].y;
+    document.getElementById('col1_w').value = templateData.answer_columns[0].w;
+    document.getElementById('col1_h').value = templateData.answer_columns[0].h;
+
+    document.getElementById('col2_x').value = templateData.answer_columns[1].x;
+    document.getElementById('col2_y').value = templateData.answer_columns[1].y;
+    document.getElementById('col2_w').value = templateData.answer_columns[1].w;
+    document.getElementById('col2_h').value = templateData.answer_columns[1].h;
+
+    document.getElementById('col3_x').value = templateData.answer_columns[2].x;
+    document.getElementById('col3_y').value = templateData.answer_columns[2].y;
+    document.getElementById('col3_w').value = templateData.answer_columns[2].w;
+    document.getElementById('col3_h').value = templateData.answer_columns[2].h;
+
+    document.getElementById('col4_x').value = templateData.answer_columns[3].x;
+    document.getElementById('col4_y').value = templateData.answer_columns[3].y;
+    document.getElementById('col4_w').value = templateData.answer_columns[3].w;
+    document.getElementById('col4_h').value = templateData.answer_columns[3].h;
+}
+
+bgImage.onload = function() {
+    redrawCanvas();
+};
+
+function zoomCanvas(scale) {
+    currentScale = scale;
+    canvas.style.transform = `scale(${scale})`;
+    canvas.style.transformOrigin = 'top center';
+}
+
+function redrawCanvas() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw background sheet
+    if (bgImage.complete && bgImage.naturalHeight > 0) {
+        ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
+    } else {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // 1. Draw Roll/ID Grid (Blue)
+    const idX = parseInt(document.getElementById('id_x').value) || 0;
+    const idY = parseInt(document.getElementById('id_y').value) || 0;
+    const idW = parseInt(document.getElementById('id_w').value) || 0;
+    const idH = parseInt(document.getElementById('id_h').value) || 0;
+    const idCols = parseInt(document.getElementById('id_cols').value) || 6;
+    const idRows = parseInt(document.getElementById('id_rows').value) || 10;
+
+    drawGrid(idX, idY, idW, idH, idRows, idCols, 'rgba(13, 110, 253, 0.25)', '#0d6efd', 'ID Grid');
+
+    // 2. Draw Set Region (Green)
+    const setX = parseInt(document.getElementById('set_x').value) || 0;
+    const setY = parseInt(document.getElementById('set_y').value) || 0;
+    const setW = parseInt(document.getElementById('set_w').value) || 0;
+    const setH = parseInt(document.getElementById('set_h').value) || 0;
+
+    drawGrid(setX, setY, setW, setH, 4, 1, 'rgba(25, 135, 84, 0.25)', '#198754', 'Set (A-D)');
+
+    // 3. Draw Answer Columns (Purple)
+    const cols = [
+        { label: 'Q1-25', x: 'col1_x', y: 'col1_y', w: 'col1_w', h: 'col1_h' },
+        { label: 'Q26-50', x: 'col2_x', y: 'col2_y', w: 'col2_w', h: 'col2_h' },
+        { label: 'Q51-75', x: 'col3_x', y: 'col3_y', w: 'col3_w', h: 'col3_h' },
+        { label: 'Q76-100', x: 'col4_x', y: 'col4_y', w: 'col4_w', h: 'col4_h' },
+    ];
+
+    cols.forEach(c => {
+        const x = parseInt(document.getElementById(c.x).value) || 0;
+        const y = parseInt(document.getElementById(c.y).value) || 0;
+        const w = parseInt(document.getElementById(c.w).value) || 0;
+        const h = parseInt(document.getElementById(c.h).value) || 0;
+        drawGrid(x, y, w, h, 25, 4, 'rgba(111, 66, 193, 0.15)', '#6f42c1', c.label);
+    });
+}
+
+function drawGrid(x, y, w, h, rows, cols, fillStyle, strokeStyle, label) {
+    if (w <= 0 || h <= 0) return;
+
+    // Outer Fill & Border
+    ctx.fillStyle = fillStyle;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = strokeStyle;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    // Label
+    ctx.fillStyle = strokeStyle;
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText(label, x + 4, y - 4);
+
+    // Inner horizontal grid lines
+    ctx.lineWidth = 0.5;
+    const rowH = h / rows;
+    for (let r = 1; r < rows; r++) {
+        ctx.beginPath();
+        ctx.moveTo(x, y + r * rowH);
+        ctx.lineTo(x + w, y + r * rowH);
+        ctx.stroke();
+    }
+
+    // Inner vertical grid lines
+    const colW = w / cols;
+    for (let c = 1; c < cols; c++) {
+        ctx.beginPath();
+        ctx.moveTo(x + c * colW, y);
+        ctx.lineTo(x + c * colW, y + h);
+        ctx.stroke();
+    }
+}
+
+function collectTemplateJson() {
+    return {
+        name: "Admission Challenge 100Q Template",
+        version: "1.0",
+        dimensions: { width: 794, height: 1123 },
+        corner_markers: { min_area: 100, max_area: 10000, aspect_tolerance: 0.4 },
+        id_grid: {
+            x: parseInt(document.getElementById('id_x').value),
+            y: parseInt(document.getElementById('id_y').value),
+            w: parseInt(document.getElementById('id_w').value),
+            h: parseInt(document.getElementById('id_h').value),
+            columns: parseInt(document.getElementById('id_cols').value),
+            rows: parseInt(document.getElementById('id_rows').value)
+        },
+        set_region: {
+            x: parseInt(document.getElementById('set_x').value),
+            y: parseInt(document.getElementById('set_y').value),
+            w: parseInt(document.getElementById('set_w').value),
+            h: parseInt(document.getElementById('set_h').value),
+            rows: 4,
+            columns: 1
+        },
+        answer_columns: [
+            {
+                column_index: 1, q_start: 1, q_end: 25,
+                x: parseInt(document.getElementById('col1_x').value),
+                y: parseInt(document.getElementById('col1_y').value),
+                w: parseInt(document.getElementById('col1_w').value),
+                h: parseInt(document.getElementById('col1_h').value)
+            },
+            {
+                column_index: 2, q_start: 26, q_end: 50,
+                x: parseInt(document.getElementById('col2_x').value),
+                y: parseInt(document.getElementById('col2_y').value),
+                w: parseInt(document.getElementById('col2_w').value),
+                h: parseInt(document.getElementById('col2_h').value)
+            },
+            {
+                column_index: 3, q_start: 51, q_end: 75,
+                x: parseInt(document.getElementById('col3_x').value),
+                y: parseInt(document.getElementById('col3_y').value),
+                w: parseInt(document.getElementById('col3_w').value),
+                h: parseInt(document.getElementById('col3_h').value)
+            },
+            {
+                column_index: 4, q_start: 76, q_end: 100,
+                x: parseInt(document.getElementById('col4_x').value),
+                y: parseInt(document.getElementById('col4_y').value),
+                w: parseInt(document.getElementById('col4_w').value),
+                h: parseInt(document.getElementById('col4_h').value)
+            }
+        ]
+    };
+}
+
+function saveTemplateForm() {
+    const json = collectTemplateJson();
+    document.getElementById('templateJsonInput').value = JSON.stringify(json, null, 2);
+    document.getElementById('templateForm').submit();
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+async function testCoordinates() {
+    const json = collectTemplateJson();
+    const resultBox = document.getElementById('testResultBox');
+    const details = document.getElementById('testResultDetails');
+    resultBox.classList.remove('d-none');
+    details.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> ওএমআর টেস্ট চালানো হচ্ছে...';
+
+    const formData = new FormData();
+    formData.append('template_json', JSON.stringify(json));
+
+    try {
+        const resp = await fetch("{% url 'dashboard:template_test_ajax' %}", {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: formData
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+            let sampleAnswersHtml = '';
+            for (const [q, a] of Object.entries(data.sample_answers)) {
+                sampleAnswersHtml += `<span class="badge bg-light text-dark border me-1 mb-1">Q${q}: ${a || '-'}</span>`;
+            }
+
+            details.innerHTML = `
+                <div class="row g-2 mb-2">
+                    <div class="col-6"><strong>শনাক্ত রোল:</strong> <span class="badge bg-primary font-monospace">${data.student_numeric_id || 'শনাক্ত হয়নি'}</span></div>
+                    <div class="col-6"><strong>শনাক্ত সেট:</strong> <span class="badge bg-success">${data.exam_set || 'শনাক্ত হয়নি'}</span></div>
+                </div>
+                <div class="mb-2"><strong>মোট উত্তর দেওয়া প্রশ্ন:</strong> ${data.answered_count} / ${data.total_questions} টি</div>
+                <div><strong>নমুনা উত্তর (Q1-Q15):</strong><br>${sampleAnswersHtml}</div>
+            `;
+            resultBox.className = 'alert alert-success py-3';
+        } else {
+            details.innerHTML = `<span class="text-danger">ত্রুটি: ${data.error || 'OMR processing failed'}</span>`;
+            resultBox.className = 'alert alert-danger py-3';
+        }
+    } catch (err) {
+        details.innerHTML = `<span class="text-danger">সার্ভার এরর: ${err.message}</span>`;
+        resultBox.className = 'alert alert-danger py-3';
+    }
+}
+</script>
+{% endblock %}

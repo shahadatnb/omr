@@ -1,0 +1,84 @@
+{% extends 'dashboard/base.html' %}
+
+{% block title %}OMR Batches | Admission Challenge{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h3 class="fw-bold mb-0">OMR স্ক্যান ও ব্যাচ তালিকা</h3>
+        <p class="text-muted mb-0">সকল সম্পন্ন ও প্রক্রিয়াকরণাধীন পরীক্ষার তালিকা</p>
+    </div>
+    <a href="{% url 'dashboard:batch_upload' %}" class="btn btn-primary">
+        <i class="fa fa-plus-circle me-1"></i> নতুন স্ক্যান আপলোড
+    </a>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4">ব্যাচ নং</th>
+                        <th>পরীক্ষার নাম / ক্লাস টেস্ট</th>
+                        <th>তারিখ ও সময়</th>
+                        <th>মোট শিট</th>
+                        <th>ম্যাচড</th>
+                        <th>আনম্যাচড</th>
+                        <th>লারাভেল সিঙ্ক</th>
+                        <th class="text-end pe-4">অ্যাকশন</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for batch in batches %}
+                    <tr>
+                        <td class="ps-4 fw-bold">#{{ batch.id }}</td>
+                        <td>
+                            <strong>{{ batch.exam_title|default:"Class Test" }}</strong>
+                            <div class="small text-muted">Class Test ID: {{ batch.class_test_id }}</div>
+                        </td>
+                        <td>{{ batch.created_at|date:"d M Y, h:i A" }}</td>
+                        <td><span class="badge bg-secondary">{{ batch.total_files }}</span></td>
+                        <td><span class="badge bg-success">{{ batch.matched_count }}</span></td>
+                        <td>
+                            {% if batch.unmatched_count > 0 %}
+                                <span class="badge bg-danger">{{ batch.unmatched_count }}</span>
+                            {% else %}
+                                <span class="badge bg-light text-muted">0</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if batch.synced_to_laravel %}
+                                <span class="badge bg-success"><i class="fa fa-check me-1"></i> সিঙ্কড</span>
+                            {% else %}
+                                <span class="badge bg-warning text-dark"><i class="fa fa-clock me-1"></i> নট সিঙ্কড</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end pe-4">
+                            <div class="btn-group btn-group-sm">
+                                <a href="{% url 'dashboard:batch_detail' batch.id %}" class="btn btn-outline-primary">
+                                    <i class="fa fa-eye me-1"></i> বিস্তারিত ও এডিট
+                                </a>
+                                <form method="post" action="{% url 'dashboard:batch_delete' batch.id %}" class="d-inline" onsubmit="return confirm('আপনি কি নিশ্চিত যে Batch #{{ batch.id }} মুছে ফেলতে চান?');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-outline-danger" title="ব্যাচ মুছুন">
+                                        <i class="fa fa-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center py-5 text-muted">
+                            <i class="fa fa-folder-open fa-3x mb-3 text-secondary d-block"></i>
+                            এখনও কোনো স্ক্যান করা হয়নি। <a href="{% url 'dashboard:batch_upload' %}">প্রথম স্ক্যান শুরু করুন</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>টেবুলেশন শিট — {{ exam.title }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #fff;
+            color: #000;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 13px;
+        }
+        .inst-title {
+            font-size: 24px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            color: #0d6efd;
+            margin-bottom: 2px;
+        }
+        .inst-tagline {
+            font-size: 13px;
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 3px;
+        }
+        .inst-address {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 0;
+        }
+        .exam-title-badge {
+            font-size: 16px;
+            font-weight: 700;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 6px 14px;
+            display: inline-block;
+            border-radius: 4px;
+            margin-top: 8px;
+        }
+        .table-print th, .table-print td {
+            padding: 5px 8px !important;
+            border: 1px solid #333 !important;
+            vertical-align: middle;
+        }
+        .table-print th {
+            background-color: #f0f0f0 !important;
+            font-weight: 700;
+            text-align: center;
+        }
+        .footer-note {
+            font-size: 11px;
+            color: #555;
+            font-style: italic;
+            margin-top: 15px;
+        }
+        .sign-line {
+            border-top: 1px solid #333;
+            padding-top: 5px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 50px;
+        }
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+            body {
+                padding: 0;
+            }
+            @page {
+                size: A4 portrait;
+                margin: 10mm 10mm;
+            }
+            .inst-title {
+                color: #000 !important;
+            }
+        }
+    </style>
+</head>
+<body class="p-4">
+
+    <!-- Top Action Toolbar (Hidden during Print) -->
+    <div class="no-print d-flex justify-content-between align-items-center mb-4 p-3 bg-light border rounded shadow-sm">
+        <div>
+            <h5 class="fw-bold mb-0"><i class="fa fa-print me-2 text-primary"></i>টেবুলেশন ও মেধা তালিকা প্রিন্ট প্রিভিউ</h5>
+            <small class="text-muted">A4 সাইজে প্রিন্ট করার জন্য প্রস্তুত করা হয়েছে</small>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'dashboard:institute_settings' %}" target="_blank" class="btn btn-outline-secondary">
+                <i class="fa fa-university me-1"></i> প্রতিষ্ঠানের নাম/ঠিকানা পরিবর্তন
+            </a>
+            <button onclick="window.print()" class="btn btn-primary fw-bold">
+                <i class="fa fa-print me-1"></i> প্রিন্ট করুন (Print Now)
+            </button>
+            <button onclick="window.close()" class="btn btn-secondary">
+                বন্ধ করুন
+            </button>
+        </div>
+    </div>
+
+    <!-- Official Institution Header -->
+    <div class="text-center mb-3">
+        {% if institute.logo %}
+            <div class="mb-2">
+                <img src="{{ institute.logo.url }}" alt="Logo" style="max-height: 65px; object-fit: contain;">
+            </div>
+        {% endif %}
+        
+        <h1 class="inst-title">{{ institute.institute_name }}</h1>
+        
+        {% if institute.tagline %}
+            <div class="inst-tagline">{{ institute.tagline }}</div>
+        {% endif %}
+        
+        <div class="inst-address">
+            {% if institute.address %}{{ institute.address }}{% endif %}
+            {% if institute.phone %} | হেল্পলাইন: {{ institute.phone }}{% endif %}
+            {% if institute.email %} | ইমেইল: {{ institute.email }}{% endif %}
+        </div>
+
+        <div class="exam-title-badge">
+            {{ exam.title }}
+        </div>
+        
+        <div class="text-muted small mt-1">
+            পরীক্ষার তারিখ: <strong>{{ exam.exam_date|date:"d F, Y" }}</strong> | 
+            মোট প্রশ্ন: <strong>{{ exam.total_questions }}টি</strong> (প্রতি সঠিক: +{{ exam.correct_mark }}, প্রতি ভুল: {{ exam.wrong_mark }}) | 
+            মুদ্রণ সময়: {{ print_time|date:"d M Y, h:i A" }}
+        </div>
+        <hr class="my-2 border-dark">
+    </div>
+
+    <!-- Summary Box -->
+    <div class="row g-2 mb-3 text-center">
+        <div class="col-4">
+            <div class="p-2 border rounded bg-light">
+                <div class="text-muted small">মোট পরীক্ষার্থী</div>
+                <strong class="fs-6">{{ total_count }} জন</strong>
+            </div>
+        </div>
+        <div class="col-4">
+            <div class="p-2 border rounded bg-light">
+                <div class="text-muted small">সর্বোচ্চ নম্বর</div>
+                <strong class="fs-6 text-success">{{ highest_marks }}</strong>
+            </div>
+        </div>
+        <div class="col-4">
+            <div class="p-2 border rounded bg-light">
+                <div class="text-muted small">গড় নম্বর (Average)</div>
+                <strong class="fs-6 text-primary">{{ avg_marks }}</strong>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabulation Table -->
+    <table class="table table-bordered table-print w-100">
+        <thead>
+            <tr>
+                <th style="width: 45px;">ক্রমিক</th>
+                <th style="width: 70px;">মেধা ক্রম</th>
+                <th style="width: 140px;">রোল নম্বর (Roll No)</th>
+                <th style="width: 65px;">সেট</th>
+                <th style="width: 80px;">সঠিক (+)</th>
+                <th style="width: 80px;">ভুল (-)</th>
+                <th style="width: 80px;">ছেড়েছে</th>
+                <th style="width: 110px;">মোট নম্বর</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in results %}
+            <tr class="text-center">
+                <td>{{ forloop.counter }}</td>
+                <td class="fw-bold">#{{ r.rank }}</td>
+                <td class="font-monospace fw-bold fs-6">{{ r.roll_no }}</td>
+                <td class="fw-bold">Set {{ r.exam_set }}</td>
+                <td class="text-success fw-bold">{{ r.correct_count }}</td>
+                <td class="text-danger">{{ r.wrong_count }}</td>
+                <td class="text-muted">{{ r.unattempted_count }}</td>
+                <td class="fw-bold fs-6">
+                    {{ r.marks|floatformat:2 }}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="8" class="text-center py-4">কোনো ফলাফল পাওয়া যায়নি।</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if institute.print_footer_note %}
+        <div class="footer-note text-center">
+            * {{ institute.print_footer_note }}
+        </div>
+    {% endif %}
+
+    <!-- Signature Row -->
+    <div class="row mt-4 pt-4">
+        <div class="col-4">
+            <div class="sign-line">প্রস্তুতকারকের স্বাক্ষর</div>
+        </div>
+        <div class="col-4">
+            <div class="sign-line">যাচাইকারীর স্বাক্ষর</div>
+        </div>
+        <div class="col-4">
+            <div class="sign-line">পরীক্ষা নিয়ন্ত্রকের স্বাক্ষর</div>
+        </div>
+    </div>
+
+</body>
+</html>

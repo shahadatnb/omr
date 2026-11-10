@@ -1,0 +1,301 @@
+{% extends 'dashboard/base.html' %}
+
+{% block title %}ফলাফল ও মেরিট লিস্ট — {{ exam.title }} | OMR Engine{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item"><a href="{% url 'dashboard:standalone_list' %}">অফলাইন পরীক্ষা</a></li>
+                <li class="breadcrumb-item active">ফলাফল ও মেরিট লিস্ট</li>
+            </ol>
+        </nav>
+        <h3 class="fw-bold mb-0">{{ exam.title }}</h3>
+        <p class="text-muted mb-0">তারিখ: {{ exam.exam_date|date:"d M Y" }} | মোট প্রশ্ন: {{ exam.total_questions }}টি | সঠিক: +{{ exam.correct_mark }} | ভুল: {{ exam.wrong_mark }}</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="{% url 'dashboard:standalone_upload' exam.id %}" class="btn btn-primary">
+            <i class="fa fa-cloud-upload-alt me-1"></i> আরও শিট আপলোড
+        </a>
+        <a href="{% url 'dashboard:standalone_print' exam.id %}" target="_blank" class="btn btn-dark">
+            <i class="fa fa-print me-1"></i> প্রিন্ট টেবুলেশন শিট
+        </a>
+        <a href="{% url 'dashboard:standalone_export_csv' exam.id %}" class="btn btn-outline-success">
+            <i class="fa fa-file-excel me-1"></i> CSV ডাউনলোড
+        </a>
+        <a href="{% url 'dashboard:standalone_answer_key' exam.id %}" class="btn btn-outline-secondary">
+            <i class="fa fa-key me-1"></i> Answer Key
+        </a>
+    </div>
+</div>
+
+<!-- Stats Row -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card shadow-sm p-3">
+            <div class="text-muted small">মোট পরীক্ষার্থী (শিট)</div>
+            <h3 class="fw-bold mb-0">{{ total_count }}</h3>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card success shadow-sm p-3">
+            <div class="text-muted small">সর্বোচ্চ নম্বর</div>
+            <h3 class="fw-bold text-success mb-0">{{ highest_marks }}</h3>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card warning shadow-sm p-3">
+            <div class="text-muted small">গড় নম্বর (Average)</div>
+            <h3 class="fw-bold text-primary mb-0">{{ avg_marks }}</h3>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm p-3">
+            <div class="text-muted small">মূল্যায়ন মোড</div>
+            <h5 class="fw-bold text-info mb-0 mt-1"><i class="fa fa-shield-alt me-1"></i> ১০০% অফলাইন (নো এপিআই)</h5>
+        </div>
+    </div>
+</div>
+
+<!-- Filter & Search Bar -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body p-3">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-5">
+                <div class="input-group">
+                    <span class="input-group-text bg-white"><i class="fa fa-search text-muted"></i></span>
+                    <input type="text" class="form-control" name="q" value="{{ query }}" placeholder="রোল নম্বর দিয়ে খুঁজুন (যেমন: 264003)...">
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" name="set">
+                    <option value="">-- সকল সেট --</option>
+                    {% for s in "ABCD" %}
+                        <option value="{{ s }}" {% if set_filter == s %}selected{% endif %}>Set {{ s }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary px-3">ফিল্টার</button>
+                {% if query or set_filter %}
+                    <a href="{% url 'dashboard:standalone_results' exam.id %}" class="btn btn-outline-secondary">রিসেট</a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Results Tabulation Table -->
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4" style="width: 80px;">মেরিট</th>
+                        <th>রোল নম্বর (Roll No)</th>
+                        <th>সেট</th>
+                        <th>সঠিক (+)</th>
+                        <th>ভুল (-)</th>
+                        <th>ছেড়েছে</th>
+                        <th>মোট প্রাপ্ত নম্বর</th>
+                        <th>ফাইলের নাম</th>
+                        <th class="text-end pe-4">অ্যাকশন</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in results %}
+                    <tr>
+                        <td class="ps-4">
+                            {% if r.rank == 1 %}
+                                <span class="badge bg-warning text-dark fs-6"><i class="fa fa-trophy"></i> ১</span>
+                            {% elif r.rank == 2 %}
+                                <span class="badge bg-secondary fs-6">২</span>
+                            {% elif r.rank == 3 %}
+                                <span class="badge bg-dark fs-6">৩</span>
+                            {% else %}
+                                <span class="fw-bold text-muted">#{{ r.rank }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <strong class="font-monospace fs-5 text-primary">{{ r.roll_no }}</strong>
+                        </td>
+                        <td>
+                            <span class="badge bg-primary fs-6">{{ r.exam_set }}</span>
+                        </td>
+                        <td><span class="text-success fw-bold">+{{ r.correct_count }}</span></td>
+                        <td><span class="text-danger fw-bold">-{{ r.wrong_count }}</span></td>
+                        <td><span class="text-muted">{{ r.unattempted_count }}</span></td>
+                        <td>
+                            <h5 class="mb-0 fw-bold {% if r.marks > 0 %}text-success{% else %}text-danger{% endif %}">
+                                {{ r.marks|floatformat:2 }}
+                            </h5>
+                        </td>
+                        <td>
+                            <span class="small text-muted text-truncate d-inline-block" style="max-width: 180px;" title="{{ r.original_filename }}">
+                                {{ r.original_filename }}
+                            </span>
+                        </td>
+                        <td class="text-end pe-4">
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-primary" onclick="loadStudentAnswers({{ r.id }})">
+                                    <i class="fa fa-eye me-1"></i> উত্তরপত্র
+                                </button>
+                                <form method="post" action="{% url 'dashboard:standalone_result_delete' r.id %}" class="d-inline" onsubmit="return confirm('এই রেকর্ডটি মুছে ফেলতে চান?');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-outline-danger" title="মুছুন">
+                                        <i class="fa fa-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center py-5 text-muted">
+                            <i class="fa fa-user-slash fa-3x mb-3 text-secondary d-block"></i>
+                            কোনো ফলাফল পাওয়া যায়নি।
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: VIEW STUDENT ANSWERS BREAKDOWN -->
+<div class="modal fade" id="answersModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title fw-bold" id="answersModalTitle">শিক্ষার্থীর উত্তরপত্র পর্যালোচনা</h5>
+                    <div class="small text-muted" id="answersModalSubtitle"></div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <!-- Top Summary Stats -->
+                <div class="d-flex justify-content-between align-items-center p-3 bg-light rounded mb-3 flex-wrap gap-2">
+                    <div id="modalMetaInfo"></div>
+                    <div class="d-flex gap-2">
+                        <span class="badge bg-success fs-6" id="badgeCorrect">সঠিক: 0</span>
+                        <span class="badge bg-danger fs-6" id="badgeWrong">ভুল: 0</span>
+                        <span class="badge bg-secondary fs-6" id="badgeUnattempted">ছেড়েছে: 0</span>
+                    </div>
+                </div>
+
+                <!-- Legend -->
+                <div class="small mb-3 d-flex gap-3">
+                    <span><span class="badge bg-success">A</span> সঠিক উত্তর</span>
+                    <span><span class="badge bg-danger">B</span> ভুল উত্তর (সঠিক পাশে প্রদর্শিত)</span>
+                    <span><span class="badge bg-light text-dark border">-</span> উত্তর দেওয়া হয়নি</span>
+                </div>
+
+                <!-- Loader -->
+                <div id="modalLoadingSpinner" class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <div class="small text-muted mt-2">উত্তরপত্র লোড হচ্ছে...</div>
+                </div>
+
+                <!-- Question Grid -->
+                <div id="modalAnswersGrid" class="d-none" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; font-size: 13px;">
+                    <!-- Injected dynamically via JS -->
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-between">
+                <div id="modalImageLink"></div>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">বন্ধ করুন</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let answersModalInstance = null;
+
+async function loadStudentAnswers(resultId) {
+    if (!answersModalInstance) {
+        answersModalInstance = new bootstrap.Modal(document.getElementById('answersModal'));
+    }
+
+    // Reset view
+    document.getElementById('modalLoadingSpinner').classList.remove('d-none');
+    document.getElementById('modalAnswersGrid').classList.add('d-none');
+    document.getElementById('modalAnswersGrid').innerHTML = '';
+    document.getElementById('modalImageLink').innerHTML = '';
+    answersModalInstance.show();
+
+    try {
+        const resp = await fetch(`/dashboard/standalone/result/${resultId}/detail-ajax/`);
+        const data = await resp.json();
+
+        if (!data.success) {
+            alert('উত্তরপত্র লোড করতে ব্যর্থ: ' + (data.error || 'Unknown error'));
+            return;
+        }
+
+        document.getElementById('answersModalTitle').innerText = `রোল নম্বর ${data.roll_no}-এর বিস্তারিত উত্তরপত্র`;
+        document.getElementById('answersModalSubtitle').innerText = `সেট: Set ${data.exam_set} | মেধা ক্রম: #${data.rank} | মোট প্রাপ্ত নম্বর: ${data.marks}`;
+
+        document.getElementById('modalMetaInfo').innerHTML = `
+            <strong>রোল: <span class="text-primary font-monospace fs-5">${data.roll_no}</span></strong>
+            <span class="badge bg-primary ms-2">Set ${data.exam_set}</span>
+            <span class="ms-2">নম্বর: <strong class="fs-5 ${data.marks > 0 ? 'text-success' : 'text-danger'}">${data.marks}</strong></span>
+        `;
+
+        document.getElementById('badgeCorrect').innerText = `সঠিক: ${data.correct_count}`;
+        document.getElementById('badgeWrong').innerText = `ভুল: ${data.wrong_count}`;
+        document.getElementById('badgeUnattempted').innerText = `ছেড়েছে: ${data.unattempted_count}`;
+
+        if (data.image_url) {
+            document.getElementById('modalImageLink').innerHTML = `
+                <a href="${data.image_url}" target="_blank" class="btn btn-sm btn-outline-primary">
+                    <i class="fa fa-image me-1"></i> মূল স্ক্যান কপি দেখুন
+                </a>
+            `;
+        }
+
+        const grid = document.getElementById('modalAnswersGrid');
+        grid.innerHTML = '';
+
+        data.breakdown.forEach(item => {
+            const card = document.createElement('div');
+            let badgeClass = 'bg-light text-muted border';
+            let contentHtml = '';
+
+            if (item.status === 'correct') {
+                badgeClass = 'bg-success text-white';
+                contentHtml = `<strong class="text-success"><i class="fa fa-check"></i> ${item.student_ans}</strong>`;
+            } else if (item.status === 'wrong') {
+                badgeClass = 'bg-danger text-white';
+                contentHtml = `<strong class="text-danger"><i class="fa fa-times"></i> ${item.student_ans}</strong> <small class="text-muted">(সঠিক: <strong>${item.correct_ans}</strong>)</small>`;
+            } else {
+                badgeClass = 'bg-light text-muted border';
+                contentHtml = `<span class="text-muted">—</span> <small class="text-muted">(সঠিক: ${item.correct_ans || '?'})</small>`;
+            }
+
+            card.className = 'border rounded p-2 bg-white';
+            card.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="fw-bold text-secondary">Q${item.q}:</span>
+                    <div>${contentHtml}</div>
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+
+        document.getElementById('modalLoadingSpinner').classList.add('d-none');
+        document.getElementById('modalAnswersGrid').classList.remove('d-none');
+
+    } catch (err) {
+        console.error(err);
+        alert('সার্ভার থেকে উত্তরপত্র লোড করতে ত্রুটি হয়েছে।');
+    }
+}
+</script>
+{% endblock %}

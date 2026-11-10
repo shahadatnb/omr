@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}OMR Engine Dashboard{% endblock %}</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- FontAwesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f4f6f9;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        .navbar-brand {
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+        .card {
+            border: none;
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+            border-radius: 8px;
+        }
+        .stat-card {
+            border-left: 4px solid #0d6efd;
+        }
+        .stat-card.success {
+            border-left-color: #198754;
+        }
+        .stat-card.warning {
+            border-left-color: #ffc107;
+        }
+        .badge-matched {
+            background-color: #d1e7dd;
+            color: #0f5132;
+        }
+        .badge-unmatched {
+            background-color: #f8d7da;
+            color: #842029;
+        }
+        .badge-manual {
+            background-color: #cfe2ff;
+            color: #084298;
+        }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top">
+        <div class="container-fluid px-4">
+            <a class="navbar-brand" href="{% url 'dashboard:batch_list' %}">
+                <i class="fa fa-qrcode text-warning me-2"></i>OMR Engine
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navMenu">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'dashboard:batch_list' %}"><i class="fa fa-list me-1"></i> Batches</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'dashboard:batch_upload' %}"><i class="fa fa-cloud-upload-alt me-1"></i> New Scan</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'dashboard:standalone_list' %}"><i class="fa fa-desktop text-info me-1"></i> অফলাইন এক্সাম (নো এপিআই)</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'dashboard:template_editor' %}"><i class="fa fa-sliders-h text-warning me-1"></i> টেমপ্লেট এডিটর</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'dashboard:institute_settings' %}"><i class="fa fa-cog text-secondary me-1"></i> সেটিংস</a>
+                    </li>
+                </ul>
+                <div class="d-flex text-light align-items-center">
+                    <small class="text-white-50"><i class="fa fa-link me-1"></i> Laravel API: {{ settings.LARAVEL_API_URL|default:"Connected" }}</small>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid px-4 py-4">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Bootstrap 5 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

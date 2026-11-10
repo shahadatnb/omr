@@ -1,0 +1,84 @@
+{% extends 'dashboard/base.html' %}
+
+{% block title %}প্রতিষ্ঠান ও প্রিন্ট সেটিংস | OMR Engine{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h3 class="fw-bold mb-0">
+                    <i class="fa fa-university text-primary me-2"></i>প্রতিষ্ঠান ও প্রিন্ট রিপোর্ট সেটিংস
+                </h3>
+                <p class="text-muted mb-0">ওএমআর টেবুলেশন ও মেধা তালিকা প্রিন্ট করার সময় প্রতিষ্ঠানের নাম, ঠিকানা ও লোগো প্রদর্শনের জন্য এই তথ্যসমূহ সেট করুন</p>
+            </div>
+            <a href="{% url 'dashboard:standalone_list' %}" class="btn btn-outline-secondary">
+                <i class="fa fa-arrow-left me-1"></i> ফিরে যান
+            </a>
+        </div>
+
+        <div class="card shadow-sm mb-4">
+            <div class="card-body p-4">
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label for="institute_name" class="form-label fw-bold">প্রতিষ্ঠানের নাম <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control form-control-lg" id="institute_name" name="institute_name" value="{{ settings.institute_name }}" required>
+                        <div class="form-text">প্রিন্ট শিটের শীর্ষে প্রধান শিরোনাম হিসেবে এই নামটি প্রদর্শিত হবে।</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="tagline" class="form-label fw-bold">স্লোগান বা উপ-শিরোনাম</label>
+                        <input type="text" class="form-control" id="tagline" name="tagline" value="{{ settings.tagline|default:'' }}" placeholder="যেমন: সেরা প্রস্তুতির বিশ্বস্ত প্রতিষ্ঠান">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="address" class="form-label fw-bold">প্রতিষ্ঠানের পূর্ণাঙ্গ ঠিকানা</label>
+                        <textarea class="form-control" id="address" name="address" rows="2" placeholder="যেমন: ১২/এ, ফার্মগেট, ঢাকা-১২১৫">{{ settings.address|default:'' }}</textarea>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label for="phone" class="form-label fw-bold">হেল্পলাইন / ফোন নম্বর</label>
+                            <input type="text" class="form-control" id="phone" name="phone" value="{{ settings.phone|default:'' }}" placeholder="০১৭XXXXXXXX, ০১৮XXXXXXXX">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="email" class="form-label fw-bold">ইমেইল ঠিকানা</label>
+                            <input type="email" class="form-control" id="email" name="email" value="{{ settings.email|default:'' }}" placeholder="info@example.com">
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label for="website" class="form-label fw-bold">ওয়েবসাইট (ঐচ্ছিক)</label>
+                            <input type="text" class="form-control" id="website" name="website" value="{{ settings.website|default:'' }}" placeholder="www.example.com">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="logo" class="form-label fw-bold">প্রতিষ্ঠানের লোগো</label>
+                            <input type="file" class="form-control" id="logo" name="logo" accept="image/*">
+                            {% if settings.logo %}
+                                <div class="mt-2 small text-muted">
+                                    বর্তমান লোগো: <a href="{{ settings.logo.url }}" target="_blank">দেখুন</a>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="print_footer_note" class="form-label fw-bold">প্রিন্ট শিটের নিচের ফুটনোট (Footer Note)</label>
+                        <input type="text" class="form-control" id="print_footer_note" name="print_footer_note" value="{{ settings.print_footer_note }}">
+                        <div class="form-text">প্রিন্ট পেজের নিচে স্বাক্ষরের উপরে এটি প্রদর্শিত হবে।</div>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg fw-bold">
+                            <i class="fa fa-save me-1"></i> সেটিংস সংরক্ষণ করুন
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,85 @@
+{% extends 'dashboard/base.html' %}
+
+{% block title %}স্ট্যান্ডঅ্যালোন অফলাইন ওএমআর পরীক্ষা | OMR Engine{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div>
+        <h3 class="fw-bold mb-0">
+            <i class="fa fa-desktop text-info me-2"></i>স্ট্যান্ডঅ্যালোন অফলাইন ওএমআর পরীক্ষা
+        </h3>
+        <p class="text-muted mb-0">লারাভেল এপিআই ছাড়া সম্পূর্ণ স্বাধীনভাবে Answer Key তৈরি, ওএমআর মূল্যায়ন ও রেজাল্ট প্রিন্ট করুন</p>
+    </div>
+    <a href="{% url 'dashboard:standalone_create' %}" class="btn btn-primary">
+        <i class="fa fa-plus-circle me-1"></i> নতুন অফলাইন পরীক্ষা তৈরি করুন
+    </a>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4">আইডি</th>
+                        <th>পরীক্ষার নাম ও বিবরণ</th>
+                        <th>তারিখ</th>
+                        <th>প্রশ্ন ও মার্কস নীতি</th>
+                        <th>মূল্যায়িত শিট</th>
+                        <th class="text-end pe-4">অ্যাকশন</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for exam in exams %}
+                    <tr>
+                        <td class="ps-4 fw-bold">#{{ exam.id }}</td>
+                        <td>
+                            <strong>{{ exam.title }}</strong>
+                            <div class="small text-muted">তৈরি: {{ exam.created_at|date:"d M Y, h:i A" }}</div>
+                        </td>
+                        <td>{{ exam.exam_date|date:"d M Y" }}</td>
+                        <td>
+                            <span class="badge bg-secondary">{{ exam.total_questions }}টি প্রশ্ন</span>
+                            <span class="badge bg-success">+{{ exam.correct_mark }}</span>
+                            <span class="badge bg-danger">{{ exam.wrong_mark }}</span>
+                        </td>
+                        <td>
+                            <span class="badge bg-primary fs-6">{{ exam.total_sheets }}টি শিট</span>
+                        </td>
+                        <td class="text-end pe-4">
+                            <div class="btn-group btn-group-sm">
+                                <a href="{% url 'dashboard:standalone_results' exam.id %}" class="btn btn-outline-primary" title="ফলাফল ও মেরিট লিস্ট">
+                                    <i class="fa fa-list-ol me-1"></i> ফলাফল
+                                </a>
+                                <a href="{% url 'dashboard:standalone_upload' exam.id %}" class="btn btn-outline-success" title="নতুন শিট আপলোড">
+                                    <i class="fa fa-cloud-upload-alt me-1"></i> আপলোড
+                                </a>
+                                <a href="{% url 'dashboard:standalone_answer_key' exam.id %}" class="btn btn-outline-secondary" title="Answer Key সেট করুন">
+                                    <i class="fa fa-key me-1"></i> কি (Key)
+                                </a>
+                                <a href="{% url 'dashboard:standalone_print' exam.id %}" target="_blank" class="btn btn-outline-dark" title="প্রিন্ট করুন">
+                                    <i class="fa fa-print"></i>
+                                </a>
+                                <form method="post" action="{% url 'dashboard:standalone_delete' exam.id %}" class="d-inline" onsubmit="return confirm('আপনি কি নিশ্চিত যে এই পরীক্ষা ও এর ফলাফল মুছে ফেলতে চান?');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-outline-danger" title="মুছুন">
+                                        <i class="fa fa-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center py-5 text-muted">
+                            <i class="fa fa-file-alt fa-3x mb-3 text-secondary d-block"></i>
+                            এখনও কোনো অফলাইন পরীক্ষা তৈরি করা হয়নি। <a href="{% url 'dashboard:standalone_create' %}">নতুন পরীক্ষা শুরু করুন</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
