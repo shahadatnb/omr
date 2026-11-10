@@ -3,91 +3,96 @@ chcp 65001 >nul
 title OMR Engine - Environment Setup
 
 echo =======================================================
-echo      OMR Engine - ভার্চুয়াল এনভায়রনমেন্ট (.venv) ও সেটআপ
+echo      OMR Engine - Environment Setup
 echo =======================================================
 echo.
 
 cd /d "%~dp0"
 
-:: ১. পাইথন এক্সিকিউটেবল খুঁজে বের করা
-set "PYTHON_CMD="
+REM 1. Clear conflicting Python environment variables
+set PYTHONHOME=
+set PYTHONPATH=
 
-:: সিস্টেম পাইথন পরীক্ষা
+REM 2. Detect Python executable
+set PYTHON_CMD=
 python --version >nul 2>&1
 if %errorlevel% equ 0 (
-    set "PYTHON_CMD=python"
+    set PYTHON_CMD=python
 )
 
-:: যদি সিস্টেমে না থাকে বা সমস্যা করে, Laragon বা লোকাল পাইথন চেক করা
 if not defined PYTHON_CMD (
-    if exist "D:\laragon\bin\python\python-3.10\python.exe" (
-        set "PYTHON_CMD=D:\laragon\bin\python\python-3.10\python.exe"
-    ) else if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" (
-        set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
-    ) else if exist "%LOCALAPPDATA%\Programs\Python\Python310\python.exe" (
-        set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python310\python.exe"
+    py --version >nul 2>&1
+    if %errorlevel% equ 0 (
+        set PYTHON_CMD=py
     )
 )
 
 if not defined PYTHON_CMD (
-    echo [ERROR] পাইথন ইনস্টলেশন খুঁজে পাওয়া যায়নি!
-    echo অনুগ্রহ করে পাইথন ইনস্টল করে সিস্টেমের PATH-এ যুক্ত করুন।
-    echo অথবা Laragon-এর পাইথন চালু আছে কিনা নিশ্চিত করুন।
+    if exist "%LOCALAPPDATA%\Programs\Python\Python315\python.exe" (
+        set PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python315\python.exe"
+    ) else if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
+        set PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
+    ) else if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" (
+        set PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
+    ) else if exist "D:\laragon\bin\python\python-3.10\python.exe" (
+        set PYTHON_CMD=D:\laragon\bin\python\python-3.10\python.exe"
+    )
+)
+
+if not defined PYTHON_CMD (
+    echo [ERROR] Python installation not found!
+    echo Please make sure Python is installed and added to PATH.
     echo.
     pause
     exit /b 1
 )
 
-echo [১/৪] পাইথন সনাক্ত হয়েছে:
+echo [1/4] Detected Python:
 "%PYTHON_CMD%" --version
 echo.
 
-:: ২. .venv ভার্চুয়াল এনভায়রনমেন্ট তৈরি করা
-if not exist ".venv\Scripts\python.exe" (
-    echo [২/৪] নতুন ভার্চুয়াল এনভায়রনমেন্ট (.venv) তৈরি করা হচ্ছে...
-    echo অনুগ্রহ করে কিছুক্ষণ অপেক্ষা করুন...
+REM 3. Virtual environment setup
+if exist ".venv\Scripts\python.exe" (
+    echo [2/4] Virtual environment .venv already exists:
+    ".venv\Scripts\python.exe" --version
+) else (
+    echo [2/4] Creating new virtual environment .venv...
     "%PYTHON_CMD%" -m venv .venv
-    
     if not exist ".venv\Scripts\python.exe" (
-        echo [ERROR] .venv তৈরি করতে ব্যর্থ হয়েছে!
-        echo পাইথন 'venv' মডিউল সমর্থন করছে কিনা যাচাই করুন।
+        echo [ERROR] Failed to create .venv!
         pause
         exit /b 1
     )
-    echo [✓] .venv ভার্চুয়াল এনভায়রনমেন্ট সফলভাবে তৈরি হয়েছে।
-) else (
-    echo [২/৪] .venv ভার্চুয়াল এনভায়রনমেন্ট ইতিপূর্বে তৈরি আছে।
+    echo [OK] Virtual environment .venv created successfully.
 )
 echo.
 
-:: ৩. .venv-এর ভেতরে প্রয়োজনীয় লাইব্রেরি ইনস্টল করা
-echo [৩/৪] .venv-এর মধ্যে প্রয়োজনীয় লাইব্রেরি ইনস্টল/আপডেট করা হচ্ছে...
+REM 4. Install dependencies
+echo [3/4] Installing / Updating libraries in .venv...
 ".venv\Scripts\python.exe" -m pip install --upgrade pip
 ".venv\Scripts\python.exe" -m pip install -r requirements.txt
 echo.
 
-:: ৪. .env কনফিগারেশন ফাইল তৈরি করা (যদি না থাকে)
+REM 5. Create .env if not exists
 if not exist ".env" (
-    echo [৪/৪] .env কনফিগারেশন ফাইল তৈরি করা হচ্ছে...
-    (
-        echo DJANGO_SECRET_KEY=omr-engine-super-secret-key-2026
-        echo DEBUG=True
-        echo LARAVEL_API_URL=http://127.0.0.1:8000/api/omr
-    ) > .env
-    echo [✓] .env ফাইল তৈরি হয়েছে।
+    echo [4/4] Creating default .env configuration...
+    echo DJANGO_SECRET_KEY=omr-engine-super-secret-key-2026 > .env
+    echo DEBUG=True >> .env
+    echo LARAVEL_API_URL=http://127.0.0.1:8000/api/omr >> .env
+    echo [OK] .env created.
 ) else (
-    echo [৪/৪] .env কনফিগারেশন ফাইল বিদ্যমান।
+    echo [4/4] .env already exists.
 )
 echo.
 
-:: ডাটাবেজ মাইগ্রেশন চালানো
-echo ডাটাবেজ মাইগ্রেশন আপডেট করা হচ্ছে...
+REM 6. Run database migrations
+echo Updating database migrations...
 ".venv\Scripts\python.exe" manage.py migrate
 
 echo.
 echo =======================================================
-echo   [✓] .venv সেটআপ সফলভাবে সম্পন্ন হয়েছে!
-echo   এখন "start.bat" ফাইলটিতে ডাবল ক্লিক করে ওএমআর চালু করুন।
+echo   [OK] Setup complete!
+echo   Run "start.bat" to launch OMR Engine Dashboard.
 echo =======================================================
 echo.
 pause

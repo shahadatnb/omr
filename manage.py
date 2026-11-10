@@ -6,6 +6,9 @@ import sys
 
 def main():
     """Run administrative tasks."""
+    # Ensure subprocesses do not inherit conflicting Python paths
+    os.environ.pop('PYTHONHOME', None)
+    os.environ.pop('PYTHONPATH', None)
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
     try:
         from django.core.management import execute_from_command_line
