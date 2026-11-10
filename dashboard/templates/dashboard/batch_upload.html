@@ -76,11 +76,28 @@
 
                 <!-- NEW BATCH INPUT -->
                 <div class="mb-4 p-3 bg-light rounded" id="newBatchSection">
-                    <label for="class_test_id" class="form-label fw-bold">
-                        <i class="fa fa-graduation-cap text-primary me-1"></i> লারাভেল Class Test ID <span class="text-danger">*</span>
-                    </label>
-                    <input type="number" class="form-control form-control-lg" id="class_test_id" placeholder="যেমন: 1, 15...">
-                    <div class="form-text">লারাভেলের <code>admin/classTest</code> থেকে Class Test ID লিখুন। স্বয়ংক্রিয়ভাবে ঐ টেস্টের শিক্ষার্থী ও Answer Key লোড হবে।</div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="class_test_id" class="form-label fw-bold">
+                                <i class="fa fa-graduation-cap text-primary me-1"></i> লারাভেল Class Test ID <span class="text-danger">*</span>
+                            </label>
+                            <input type="number" class="form-control form-control-lg" id="class_test_id" placeholder="যেমন: 1, 15...">
+                            <div class="form-text">লারাভেলের <code>admin/classTest</code> থেকে Class Test ID লিখুন। স্বয়ংক্রিয়ভাবে ঐ টেস্টের শিক্ষার্থী ও Answer Key লোড হবে।</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="batch_template_name" class="form-label fw-bold">
+                                <i class="fa fa-file-code text-info me-1"></i> ওএমআর শিট টেমপ্লেট
+                            </label>
+                            <select class="form-select form-select-lg" id="batch_template_name">
+                                {% for t in available_templates %}
+                                    <option value="{{ t.filename }}" {% if t.filename == 'admission_challenge_100q.json' %}selected{% endif %}>
+                                        {{ t.name }} ({{ t.filename }})
+                                    </option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">অনলাইন পরীক্ষার জন্য ডিফল্ট <code>Admission Challenge</code> বা অন্য যেকোনো টেমপ্লেট নির্বাচন করুন।</div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- EXISTING BATCH SELECTOR -->
@@ -350,6 +367,10 @@ async function startProcessing() {
             return;
         }
         createFormData.append('class_test_id', classTestId);
+        const templateName = document.getElementById('batch_template_name').value;
+        if (templateName) {
+            createFormData.append('template_name', templateName);
+        }
     } else {
         const existingBatchId = document.getElementById('existing_batch_id').value;
         if (!existingBatchId) {

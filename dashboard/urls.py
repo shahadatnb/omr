@@ -15,6 +15,7 @@ urlpatterns = [
     # Template Editor routes
     path('template-editor/', views.template_editor, name='template_editor'),
     path('template-editor/test-ajax/', views.template_test_ajax, name='template_test_ajax'),
+    path('template-editor/upload-sample-ajax/', views.template_upload_sample_ajax, name='template_upload_sample_ajax'),
 
     # AJAX Endpoints for real-time progress & appending to batches
     path('batch/create-ajax/', views.batch_create_ajax, name='batch_create_ajax'),

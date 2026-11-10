@@ -5,6 +5,7 @@ from django.utils import timezone
 class BatchJob(models.Model):
     class_test_id = models.IntegerField(help_text="Laravel ClassTest ID")
     exam_title = models.CharField(max_length=255, blank=True, null=True)
+    template_name = models.CharField(max_length=120, default='admission_challenge_100q.json', help_text="OMR Template File")
     created_at = models.DateTimeField(default=timezone.now)
     total_files = models.IntegerField(default=0)
     processed_count = models.IntegerField(default=0)
@@ -78,6 +79,7 @@ class StandaloneExam(models.Model):
     """
     title = models.CharField(max_length=255, help_text="পরীক্ষার নাম (যেমন: মডেল টেস্ট ০১)")
     exam_date = models.DateField(default=timezone.now)
+    template_name = models.CharField(max_length=120, default='offline_exam_100q.json', help_text="OMR Template File")
     total_questions = models.IntegerField(default=100)
     correct_mark = models.FloatField(default=1.0, help_text="প্রতিটি সঠিক উত্তরের জন্য প্রাপ্ত নম্বর")
     wrong_mark = models.FloatField(default=-0.25, help_text="প্রতিটি ভুল উত্তরের জন্য কাটা নম্বর")

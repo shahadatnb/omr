@@ -49,19 +49,51 @@
         </h3>
         <p class="text-muted mb-0">OMR শিটের রোল, সেট এবং ১০০ প্রশ্নের উত্তর কলামের স্থানাঙ্ক (Coordinates) সমন্বয় করুন</p>
     </div>
-    <div class="d-flex gap-2">
-        <button type="button" class="btn btn-outline-primary" onclick="testCoordinates()">
-            <i class="fa fa-vial me-1"></i> নমুনা শিটে টেস্ট করুন
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+        <div class="input-group input-group-sm">
+            <span class="input-group-text bg-white fw-bold"><i class="fa fa-layer-group text-primary me-1"></i>টেমপ্লেট:</span>
+            <select class="form-select form-select-sm" onchange="switchTemplate(this.value)" style="min-width: 220px;">
+                {% for t in available_templates %}
+                    <option value="{{ t.filename }}" {% if t.filename == current_template_filename %}selected{% endif %}>
+                        {{ t.name }} ({{ t.filename }})
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="button" class="btn btn-outline-warning btn-sm fw-bold" onclick="document.getElementById('sampleFileInput').click()">
+            <i class="fa fa-camera me-1"></i> নমুনা শিট পরিবর্তন
         </button>
-        <button type="button" class="btn btn-success fw-bold" onclick="saveTemplateForm()">
-            <i class="fa fa-save me-1"></i> টেমপ্লেট সংরক্ষণ করুন
+        <input type="file" id="sampleFileInput" accept="image/*" class="d-none" onchange="uploadSampleSheet(this)">
+        <button type="button" class="btn btn-outline-primary btn-sm" onclick="testCoordinates()">
+            <i class="fa fa-vial me-1"></i> টেস্ট করুন
+        </button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#saveAsModal">
+            <i class="fa fa-copy me-1"></i> Save As (নতুন কপি)
+        </button>
+        <button type="button" class="btn btn-success btn-sm fw-bold" onclick="saveTemplateForm()">
+            <i class="fa fa-save me-1"></i> সংরক্ষণ করুন
         </button>
     </div>
+</div>
+
+<div id="sampleUploadAlert" class="alert alert-secondary py-2 d-none">
+    <div id="sampleUploadMessage"></div>
+</div>
+
+<div class="alert alert-info py-2 d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <i class="fa fa-info-circle me-1"></i> বর্তমান সক্রিয় টেমপ্লেট: <strong>{{ template_data.name|default:current_template_filename }}</strong> (<code>{{ current_template_filename }}</code>)
+    </div>
+    <span class="badge bg-secondary">আকার: {{ template_data.dimensions.width|default:794 }} x {{ template_data.dimensions.height|default:1123 }} px</span>
 </div>
 
 <form id="templateForm" method="post" action="{% url 'dashboard:template_editor' %}">
     {% csrf_token %}
     <input type="hidden" name="template_json" id="templateJsonInput">
+    <input type="hidden" name="action" id="formAction" value="save">
+    <input type="hidden" name="template_filename" id="formTemplateFilename" value="{{ current_template_filename }}">
+    <input type="hidden" name="new_title" id="formNewTitle" value="">
+    <input type="hidden" name="new_filename" id="formNewFilename" value="">
 
     <div class="row g-3">
         <!-- LEFT COLUMN: INTERACTIVE CANVAS -->
@@ -396,8 +428,33 @@ function collectTemplateJson() {
     };
 }
 
+function switchTemplate(filename) {
+    if (confirm('আপনি কি এই টেমপ্লেটটি লোড করতে চান? অসংরক্ষিত কোনো পরিবর্তন থাকলে তা মুছে যাবে।')) {
+        window.location.href = "{% url 'dashboard:template_editor' %}?template=" + encodeURIComponent(filename);
+    }
+}
+
 function saveTemplateForm() {
     const json = collectTemplateJson();
+    document.getElementById('formAction').value = 'save';
+    document.getElementById('templateJsonInput').value = JSON.stringify(json, null, 2);
+    document.getElementById('templateForm').submit();
+}
+
+function submitSaveAs() {
+    const newTitle = document.getElementById('saveAsTitle').value.trim();
+    const newFilename = document.getElementById('saveAsFilename').value.trim();
+    if (!newFilename) {
+        alert('অনুগ্রহ করে ফাইলের নাম লিখুন (যেমন: model_test_100q.json)');
+        return;
+    }
+    const json = collectTemplateJson();
+    if (newTitle) {
+        json.name = newTitle;
+    }
+    document.getElementById('formAction').value = 'save_as';
+    document.getElementById('formNewTitle').value = newTitle;
+    document.getElementById('formNewFilename').value = newFilename;
     document.getElementById('templateJsonInput').value = JSON.stringify(json, null, 2);
     document.getElementById('templateForm').submit();
 }
@@ -417,6 +474,41 @@ function getCookie(name) {
     return cookieValue;
 }
 
+async function uploadSampleSheet(input) {
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    const alertBox = document.getElementById('sampleUploadAlert');
+    const msgBox = document.getElementById('sampleUploadMessage');
+    alertBox.className = 'alert alert-info py-2 d-flex align-items-center mb-3';
+    alertBox.classList.remove('d-none');
+    msgBox.innerHTML = '<i class="fa fa-spinner fa-spin me-2"></i> নমুনা শিট আপলোড হচ্ছে এবং Perspective Correction (Warp) করা হচ্ছে... অনুগ্রহ করে অপেক্ষা করুন।';
+
+    const formData = new FormData();
+    formData.append('sample_image', file);
+    formData.append('template_filename', "{{ current_template_filename }}");
+
+    try {
+        const resp = await fetch("{% url 'dashboard:template_upload_sample_ajax' %}", {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: formData
+        });
+        const data = await resp.json();
+        if (data.success) {
+            alertBox.className = 'alert alert-success py-2 d-flex align-items-center mb-3';
+            msgBox.innerHTML = `<i class="fa fa-check-circle me-2"></i> ${data.message} ক্যানভাসে নতুন শিট প্রদর্শিত হচ্ছে। এখন শিটের সাথে বাবলগুলো মিলিয়ে নিন।`;
+            bgImage.src = data.sample_url;
+        } else {
+            alertBox.className = 'alert alert-danger py-2 d-flex align-items-center mb-3';
+            msgBox.innerHTML = `<i class="fa fa-exclamation-circle me-2"></i> ${data.error || 'আপলোড ব্যর্থ হয়েছে।'}`;
+        }
+    } catch (e) {
+        alertBox.className = 'alert alert-danger py-2 d-flex align-items-center mb-3';
+        msgBox.innerHTML = `<i class="fa fa-exclamation-circle me-2"></i> সার্ভার এরর: ${e.message}`;
+    }
+    input.value = '';
+}
+
 async function testCoordinates() {
     const json = collectTemplateJson();
     const resultBox = document.getElementById('testResultBox');
@@ -426,6 +518,7 @@ async function testCoordinates() {
 
     const formData = new FormData();
     formData.append('template_json', JSON.stringify(json));
+    formData.append('template_filename', "{{ current_template_filename }}");
 
     try {
         const resp = await fetch("{% url 'dashboard:template_test_ajax' %}", {
@@ -460,4 +553,35 @@ async function testCoordinates() {
     }
 }
 </script>
+
+<!-- SAVE AS MODAL -->
+<div class="modal fade" id="saveAsModal" tabindex="-1" aria-labelledby="saveAsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="saveAsModalLabel">
+                    <i class="fa fa-copy text-primary me-2"></i>নতুন টেমপ্লেট হিসেবে সেভ করুন (Save As)
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="saveAsTitle" class="form-label fw-bold">টেমপ্লেটের নাম / টাইটেল</label>
+                    <input type="text" class="form-control" id="saveAsTitle" placeholder="যেমন: Model Test 100Q Template" value="{{ template_data.name|default:'' }} (Copy)">
+                </div>
+                <div class="mb-3">
+                    <label for="saveAsFilename" class="form-label fw-bold">ফাইলের নাম (.json)</label>
+                    <input type="text" class="form-control" id="saveAsFilename" placeholder="যেমন: custom_exam_100q.json">
+                    <div class="form-text">ইংরেজি অক্ষর ও আন্ডারস্কোর ব্যবহার করুন। যেমন: <code>custom_exam_100q.json</code></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">বাতিল</button>
+                <button type="button" class="btn btn-primary fw-bold" onclick="submitSaveAs()">
+                    <i class="fa fa-check me-1"></i> নতুন টেমপ্লেট তৈরি ও সংরক্ষণ করুন
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}

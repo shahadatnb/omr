@@ -34,12 +34,49 @@ def _get_cached_answer_key(client, class_test_id, exam_set):
     return None
 
 
+def get_available_templates():
+    """
+    Returns list of available templates in settings.OMR_TEMPLATES_DIR.
+    """
+    templates = []
+    templates_dir = Path(settings.OMR_TEMPLATES_DIR)
+    if templates_dir.exists():
+        for f in sorted(templates_dir.glob('*.json')):
+            try:
+                with open(f, 'r', encoding='utf-8') as fp:
+                    data = json.load(fp)
+                    name = data.get('name', f.stem)
+            except Exception:
+                name = f.stem
+            templates.append({
+                'filename': f.name,
+                'name': name
+            })
+    return templates
+
+
+def get_template_path(template_name=None, default='admission_challenge_100q.json'):
+    """
+    Safely resolves the Path to a template JSON file.
+    """
+    templates_dir = Path(settings.OMR_TEMPLATES_DIR)
+    if template_name:
+        safe_name = os.path.basename(template_name)
+        candidate = templates_dir / safe_name
+        if candidate.exists():
+            return candidate
+    candidate = templates_dir / default
+    if candidate.exists():
+        return candidate
+    return templates_dir / 'admission_challenge_100q.json'
+
+
 def process_single_scan_helper(scan, fpath, batch, client=None, template_path=None):
     """Process a single ScanResult, match student, calculate marks, and update stats."""
     if client is None:
         client = LaravelOmrClient(base_url=settings.LARAVEL_API_URL)
     if template_path is None:
-        template_path = settings.OMR_TEMPLATES_DIR / 'admission_challenge_100q.json'
+        template_path = get_template_path(batch.template_name, default='admission_challenge_100q.json')
 
     try:
         res = process_sheet(fpath, template_path, debug=False)
@@ -111,11 +148,13 @@ def batch_upload(request):
     """
     Batch upload page:
     Loads existing batches so the user can either create a new batch
-    or append files into an existing batch.
+    or append files into an existing batch. Also loads available OMR templates.
     """
     existing_batches = BatchJob.objects.all().order_by('-id')[:50]
+    available_templates = get_available_templates()
     return render(request, 'dashboard/batch_upload.html', {
-        'existing_batches': existing_batches
+        'existing_batches': existing_batches,
+        'available_templates': available_templates,
     })
 
 
@@ -149,6 +188,8 @@ def batch_create_ajax(request):
         except ValueError:
             return JsonResponse({'success': False, 'error': 'Class Test ID একটি পূর্ণসংখ্যা হতে হবে।'}, status=400)
 
+        template_name = request.POST.get('template_name', 'admission_challenge_100q.json').strip() or 'admission_challenge_100q.json'
+
         exam_title = f"Class Test #{class_test_id}"
         try:
             info = client.get_class_test_info(class_test_id)
@@ -160,7 +201,8 @@ def batch_create_ajax(request):
 
         batch = BatchJob.objects.create(
             class_test_id=class_test_id,
-            exam_title=exam_title
+            exam_title=exam_title,
+            template_name=template_name
         )
         return JsonResponse({
             'success': True,
@@ -464,30 +506,58 @@ def scan_result_delete(request, result_id):
 def template_editor(request):
     """
     Visual Template Editor (HTML5 Canvas).
-    Allows viewing and adjusting coordinates for:
-    - ID / Roll Number Grid (X, Y, W, H, Cols, Rows)
-    - Exam Set (A/B/C/D)
-    - 4 Answer columns (Q1-25, Q26-50, Q51-75, Q76-100)
+    Supports multiple templates:
+    - Switch templates via ?template=<filename>
+    - Save modifications to selected template
+    - 'Save As' to create a new template copy
     """
-    template_path = settings.OMR_TEMPLATES_DIR / 'admission_challenge_100q.json'
+    available_templates = get_available_templates()
+    selected_filename = request.GET.get('template') or request.POST.get('template_filename') or 'admission_challenge_100q.json'
+    selected_filename = os.path.basename(selected_filename)
+    template_path = get_template_path(selected_filename, default='admission_challenge_100q.json')
 
     if request.method == 'POST':
+        action = request.POST.get('action', 'save')
         try:
             new_data_str = request.POST.get('template_json')
             if not new_data_str:
                 messages.error(request, 'টেমপ্লেট ডাটা পাওয়া যায়নি।')
-                return redirect('dashboard:template_editor')
+                return redirect(f"{request.path}?template={selected_filename}")
 
             parsed = json.loads(new_data_str)
-            with open(template_path, 'w', encoding='utf-8') as f:
-                json.dump(parsed, f, indent=2, ensure_ascii=False)
 
-            messages.success(request, 'ওএমআর টেমপ্লেট সফলভাবে সংরক্ষিত হয়েছে!')
+            if action == 'save_as':
+                new_title = request.POST.get('new_title', '').strip()
+                new_filename = request.POST.get('new_filename', '').strip()
+                if not new_filename:
+                    messages.error(request, 'নতুন ফাইলের নাম আবশ্যক।')
+                    return redirect(f"{request.path}?template={selected_filename}")
+
+                if not new_filename.endswith('.json'):
+                    new_filename += '.json'
+                new_filename = os.path.basename(new_filename)
+
+                if new_title:
+                    parsed['name'] = new_title
+
+                save_path = settings.OMR_TEMPLATES_DIR / new_filename
+                with open(save_path, 'w', encoding='utf-8') as f:
+                    json.dump(parsed, f, indent=2, ensure_ascii=False)
+
+                messages.success(request, f'নতুন টেমপ্লেট "{new_filename}" সফলভাবে তৈরি ও সংরক্ষিত হয়েছে!')
+                return redirect(f"{request.path}?template={new_filename}")
+            else:
+                # Normal save to current file
+                with open(template_path, 'w', encoding='utf-8') as f:
+                    json.dump(parsed, f, indent=2, ensure_ascii=False)
+
+                messages.success(request, f'টেমপ্লেট "{template_path.name}" সফলভাবে সংরক্ষিত হয়েছে!')
+                return redirect(f"{request.path}?template={template_path.name}")
+
         except Exception as e:
             logger.exception("Failed to save template")
             messages.error(request, f'টেমপ্লেট সেভ করতে ব্যর্থ: {e}')
-
-        return redirect('dashboard:template_editor')
+            return redirect(f"{request.path}?template={selected_filename}")
 
     # Load existing template
     template_data = {}
@@ -495,8 +565,25 @@ def template_editor(request):
         with open(template_path, 'r', encoding='utf-8') as f:
             template_data = json.load(f)
 
-    sample_image_url = '/media/templates/sample_warped.jpg'
+    # Determine template-specific sample image url
+    sample_image_url = None
+    if 'sample_image' in template_data and template_data['sample_image']:
+        cand_path = settings.BASE_DIR / template_data['sample_image'].lstrip('/')
+        if cand_path.exists():
+            sample_image_url = template_data['sample_image']
+
+    stem = os.path.splitext(template_path.name)[0]
+    if not sample_image_url:
+        stem_sample = settings.BASE_DIR / 'media' / 'templates' / f"{stem}_sample.jpg"
+        if stem_sample.exists():
+            sample_image_url = f"/media/templates/{stem}_sample.jpg"
+
+    if not sample_image_url:
+        sample_image_url = '/media/templates/sample_warped.jpg'
+
     return render(request, 'dashboard/template_editor.html', {
+        'available_templates': available_templates,
+        'current_template_filename': template_path.name,
         'template_data': template_data,
         'template_json_str': json.dumps(template_data, indent=2),
         'sample_image_url': sample_image_url,
@@ -504,10 +591,79 @@ def template_editor(request):
 
 
 @require_POST
+def template_upload_sample_ajax(request):
+    """
+    Upload and warp a reference/sample sheet for the currently edited template.
+    Uses corner marker detection and perspective warp to align it to 794x1123,
+    then updates the template configuration so the editor uses this sheet as background.
+    """
+    if 'sample_image' not in request.FILES:
+        return JsonResponse({'success': False, 'error': 'কোনো ইমেজ ফাইল পাওয়া যায়নি।'}, status=400)
+
+    f = request.FILES['sample_image']
+    template_filename = request.POST.get('template_filename', 'admission_challenge_100q.json')
+    template_filename = os.path.basename(template_filename)
+    stem = os.path.splitext(template_filename)[0]
+
+    try:
+        import time
+        import cv2
+        import numpy as np
+        from omr_engine.perspective import find_corner_markers, warp_sheet
+
+        # Read uploaded image into memory
+        file_bytes = np.frombuffer(f.read(), np.uint8)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        if img is None:
+            return JsonResponse({'success': False, 'error': 'ছবিটি পড়া সম্ভব হয়নি। সঠিক ইমেজ ফাইল দিন।'}, status=400)
+
+        # Detect corners and warp
+        corners = find_corner_markers(img)
+        corners_found = False
+        if corners:
+            warped = warp_sheet(img, corners, output_size=(794, 1123))
+            corners_found = True
+        else:
+            warped = cv2.resize(img, (794, 1123))
+
+        # Save warped reference image
+        out_filename = f"{stem}_sample.jpg"
+        out_dir = settings.BASE_DIR / 'media' / 'templates'
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / out_filename
+        cv2.imwrite(str(out_path), warped)
+
+        # Update active template JSON
+        template_file_path = get_template_path(template_filename)
+        sample_rel_url = f"/media/templates/{out_filename}"
+        if template_file_path.exists():
+            try:
+                with open(template_file_path, 'r', encoding='utf-8') as tf:
+                    t_data = json.load(tf)
+                t_data['sample_image'] = sample_rel_url
+                with open(template_file_path, 'w', encoding='utf-8') as tf:
+                    json.dump(t_data, tf, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logger.warning(f"Could not update template JSON with sample_image: {e}")
+
+        ts = int(time.time())
+        msg = 'নমুনা শিট সফলভাবে লোড ও কোণা সোজা (Warp) করা হয়েছে।' if corners_found else 'নমুনা শিট লোড হয়েছে (কোণার ৪টি চিহ্ন না পাওয়ায় সরাসরি রিসাইজ করা হয়েছে)।'
+        return JsonResponse({
+            'success': True,
+            'sample_url': f"{sample_rel_url}?v={ts}",
+            'corners_found': corners_found,
+            'message': msg
+        })
+    except Exception as e:
+        logger.exception("Sample upload error")
+        return JsonResponse({'success': False, 'error': f'ত্রুটি: {e}'}, status=500)
+
+
+@require_POST
 def template_test_ajax(request):
     """
     Test OMR recognition with live coordinates from the Template Editor
-    against sample_warped.jpg.
+    against the active template's sample image.
     """
     import tempfile
     try:
@@ -516,12 +672,23 @@ def template_test_ajax(request):
             return JsonResponse({'success': False, 'error': 'No template data provided'}, status=400)
 
         template_dict = json.loads(coords_str)
-        sample_path = settings.BASE_DIR / 'media' / 'templates' / 'sample_warped.jpg'
+        template_filename = request.POST.get('template_filename') or 'admission_challenge_100q.json'
+        stem = os.path.splitext(os.path.basename(template_filename))[0]
+
+        # Determine sample image: template-specific first, then general sample
+        sample_path = settings.BASE_DIR / 'media' / 'templates' / f"{stem}_sample.jpg"
+        if not sample_path.exists() and 'sample_image' in template_dict and template_dict['sample_image']:
+            candidate = settings.BASE_DIR / template_dict['sample_image'].lstrip('/')
+            if candidate.exists():
+                sample_path = candidate
+
+        if not sample_path.exists():
+            sample_path = settings.BASE_DIR / 'media' / 'templates' / 'sample_warped.jpg'
         if not sample_path.exists():
             sample_path = settings.BASE_DIR / 'warped_sample.jpg'
 
         if not sample_path.exists():
-            return JsonResponse({'success': False, 'error': 'Sample image not found on server'}, status=404)
+            return JsonResponse({'success': False, 'error': 'নমুনা শিটের ইমেজ পাওয়া যায়নি'}, status=404)
 
         # Write temp template JSON to test
         with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.json', encoding='utf-8') as tf:
@@ -530,7 +697,7 @@ def template_test_ajax(request):
 
         try:
             res = process_sheet(str(sample_path), temp_template_path, debug=True)
-            # Pick first 10 answers
+            # Pick first 15 answers
             answers_sample = {str(k): res['answers'][k] for k in list(res['answers'].keys())[:15]} if res.get('answers') else {}
             filled_count = sum(1 for v in res.get('answers', {}).values() if v is not None)
 
@@ -563,13 +730,14 @@ def standalone_list(request):
 
 
 def standalone_create(request):
-    """Create a new standalone exam with scoring rules."""
+    """Create a new standalone exam with scoring rules and selected OMR template."""
     if request.method == 'POST':
         title = request.POST.get('title', '').strip()
         exam_date = request.POST.get('exam_date')
         total_questions = int(request.POST.get('total_questions', 100))
         correct_mark = float(request.POST.get('correct_mark', 1.0))
         wrong_mark = float(request.POST.get('wrong_mark', -0.25))
+        template_name = request.POST.get('template_name', 'offline_exam_100q.json').strip() or 'offline_exam_100q.json'
 
         if not title:
             messages.error(request, 'পরীক্ষার নাম লিখুন।')
@@ -580,12 +748,16 @@ def standalone_create(request):
             exam_date=exam_date or timezone.now().date(),
             total_questions=total_questions,
             correct_mark=correct_mark,
-            wrong_mark=wrong_mark
+            wrong_mark=wrong_mark,
+            template_name=template_name
         )
         messages.success(request, f'পরীক্ষা "{exam.title}" তৈরি হয়েছে। এখন Answer Key সেট করুন।')
         return redirect('dashboard:standalone_answer_key', exam_id=exam.id)
 
-    return render(request, 'dashboard/standalone/exam_create.html')
+    available_templates = get_available_templates()
+    return render(request, 'dashboard/standalone/exam_create.html', {
+        'available_templates': available_templates
+    })
 
 
 def standalone_answer_key(request, exam_id):
@@ -677,7 +849,7 @@ def standalone_upload_single_ajax(request, exam_id):
     if ext not in valid_exts:
         return JsonResponse({'success': False, 'error': f'Invalid file type: {ext}'}, status=400)
 
-    template_path = settings.OMR_TEMPLATES_DIR / 'admission_challenge_100q.json'
+    template_path = get_template_path(exam.template_name, default='offline_exam_100q.json')
 
     # Create result record
     res_obj = StandaloneResult.objects.create(

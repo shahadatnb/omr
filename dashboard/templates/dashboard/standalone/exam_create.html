@@ -36,6 +36,20 @@
                         </div>
                     </div>
 
+                    <div class="mb-3">
+                        <label for="template_name" class="form-label fw-bold">
+                            <i class="fa fa-file-code text-primary me-1"></i> ওএমআর শিট টেমপ্লেট
+                        </label>
+                        <select class="form-select form-select-lg" id="template_name" name="template_name">
+                            {% for t in available_templates %}
+                                <option value="{{ t.filename }}" {% if t.filename == 'offline_exam_100q.json' %}selected{% endif %}>
+                                    {{ t.name }} ({{ t.filename }})
+                                </option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">এই পরীক্ষার ওএমআর শিট স্ক্যানের জন্য উপযুক্ত জ্যামিতিক টেমপ্লেট নির্বাচন করুন (ডিফল্ট: <code>Offline Standard Exam</code>)।</div>
+                    </div>
+
                     <div class="row g-3 mb-4">
                         <div class="col-md-6">
                             <label for="correct_mark" class="form-label fw-bold">সঠিক উত্তরে নম্বর</label>

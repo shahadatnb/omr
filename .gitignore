@@ -33,9 +33,9 @@ staticfiles/
 media/scans/
 media/standalone_scans/
 media/settings/
-# Keep sample template image for canvas
+# Keep sample template images for canvas
 !media/templates/
-!media/templates/sample_warped.jpg
+!media/templates/*.jpg
 
 # 6. Temporary Test Images & Diagnostic Scripts
 box_*.jpg

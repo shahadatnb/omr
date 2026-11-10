@@ -12,7 +12,7 @@
             </ol>
         </nav>
         <h3 class="fw-bold mb-0">{{ exam.title }}</h3>
-        <p class="text-muted mb-0">তারিখ: {{ exam.exam_date|date:"d M Y" }} | মোট প্রশ্ন: {{ exam.total_questions }}টি | সঠিক: +{{ exam.correct_mark }} | ভুল: {{ exam.wrong_mark }}</p>
+        <p class="text-muted mb-0">তারিখ: {{ exam.exam_date|date:"d M Y" }} | মোট প্রশ্ন: {{ exam.total_questions }}টি | সঠিক: +{{ exam.correct_mark }} | ভুল: {{ exam.wrong_mark }} <span class="badge bg-light text-dark border ms-2"><i class="fa fa-file-code text-primary me-1"></i>{{ exam.template_name }}</span></p>
     </div>
     <div class="d-flex gap-2 flex-wrap">
         <a href="{% url 'dashboard:standalone_upload' exam.id %}" class="btn btn-primary">
