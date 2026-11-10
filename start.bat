@@ -9,18 +9,22 @@ echo.
 
 cd /d "%~dp0"
 
-:: venv থাকলে এক্টিভেট করা
-if exist "venv\Scripts\activate.bat" (
-    call venv\Scripts\activate.bat
+set "PY_RUN="
+if exist ".venv\Scripts\python.exe" (
+    set "PY_RUN=.venv\Scripts\python.exe"
+) else if exist "venv\Scripts\python.exe" (
+    set "PY_RUN=venv\Scripts\python.exe"
+) else (
+    set "PY_RUN=python"
 )
 
-:: ব্রাউজারে ড্যাশবোর্ড ওপেন করা
+:: ডিফল্ট ব্রাউজারে ড্যাশবোর্ড ওপেন করা
 start http://127.0.0.1:8080/
 
 echo ওএমআর সার্ভার চলমান হচ্ছে: http://127.0.0.1:8080/
 echo সার্ভার বন্ধ করতে এই উইন্ডো বন্ধ করুন অথবা Ctrl + C চাপুন।
 echo.
 
-python manage.py runserver 8080
+"%PY_RUN%" manage.py runserver 8080
 
 pause
