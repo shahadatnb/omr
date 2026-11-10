@@ -320,46 +320,59 @@ async function startModalAppendProcess() {
     let processed = 0;
     let matched = 0;
     let unmatched = 0;
+    let nextIndex = 0;
+    const CONCURRENCY = 4; // 4 Parallel Workers
 
     document.getElementById('modalTotalCount').innerText = total;
 
-    for (let i = 0; i < total; i++) {
-        const file = modalSelectedFiles[i];
-        const percent = Math.round(((i) / total) * 100);
-        document.getElementById('modalProgressBar').style.width = percent + '%';
-        document.getElementById('modalProgressBar').innerText = percent + '%';
-        document.getElementById('modalProgressStatus').innerText = `প্রসেস হচ্ছে (${i + 1}/${total}): ${file.name}`;
+    async function modalWorker() {
+        while (nextIndex < total) {
+            const i = nextIndex++;
+            const file = modalSelectedFiles[i];
 
-        const formData = new FormData();
-        formData.append('file', file);
+            const formData = new FormData();
+            formData.append('file', file);
 
-        try {
-            const resp = await fetch(`/dashboard/batch/${batchId}/upload-single-ajax/`, {
-                method: 'POST',
-                headers: { 'X-CSRFToken': getCookie('csrftoken') },
-                body: formData
-            });
-            const data = await resp.json();
+            try {
+                const resp = await fetch(`/dashboard/batch/${batchId}/upload-single-ajax/`, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': getCookie('csrftoken') },
+                    body: formData
+                });
+                const data = await resp.json();
 
-            processed++;
-            if (data.is_matched) matched++;
-            else unmatched++;
+                processed++;
+                if (data.is_matched) matched++;
+                else unmatched++;
 
-            document.getElementById('modalProcessedCount').innerText = processed;
-            document.getElementById('modalMatchedCount').innerText = matched;
-            document.getElementById('modalUnmatchedCount').innerText = unmatched;
+                document.getElementById('modalProcessedCount').innerText = processed;
+                document.getElementById('modalMatchedCount').innerText = matched;
+                document.getElementById('modalUnmatchedCount').innerText = unmatched;
 
-            const logLine = document.createElement('div');
-            logLine.innerHTML = `<span class="${data.is_matched ? 'text-success' : 'text-danger'}">●</span> [${file.name}] → Roll: ${data.student_numeric_id || 'N/A'}, Set: ${data.exam_set || '-'} → <strong>${data.is_matched ? data.student_name : 'ম্যাচ করেনি'}</strong> (Score: ${data.marks})`;
-            document.getElementById('modalLogBox').appendChild(logLine);
-            document.getElementById('modalLogBox').scrollTop = document.getElementById('modalLogBox').scrollHeight;
+                const logLine = document.createElement('div');
+                logLine.innerHTML = `<span class="${data.is_matched ? 'text-success' : 'text-danger'}">●</span> [${file.name}] → Roll: ${data.student_numeric_id || 'N/A'}, Set: ${data.exam_set || '-'} → <strong>${data.is_matched ? data.student_name : 'ম্যাচ করেনি'}</strong> (Score: ${data.marks})`;
+                document.getElementById('modalLogBox').appendChild(logLine);
+                document.getElementById('modalLogBox').scrollTop = document.getElementById('modalLogBox').scrollHeight;
 
-        } catch (err) {
-            console.error(err);
-            processed++;
-            unmatched++;
+            } catch (err) {
+                console.error(err);
+                processed++;
+                unmatched++;
+            }
+
+            const percent = Math.round((processed / total) * 100);
+            document.getElementById('modalProgressBar').style.width = percent + '%';
+            document.getElementById('modalProgressBar').innerText = percent + '%';
+            document.getElementById('modalProgressStatus').innerText = `সমান্তরাল প্রসেস হচ্ছে (৪টি থ্রেড): ${processed}/${total}`;
         }
     }
+
+    const workers = [];
+    const numWorkers = Math.min(CONCURRENCY, total);
+    for (let w = 0; w < numWorkers; w++) {
+        workers.push(modalWorker());
+    }
+    await Promise.all(workers);
 
     // Complete
     document.getElementById('modalProgressBar').style.width = '100%';

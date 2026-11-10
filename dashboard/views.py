@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 # In-memory answer key cache to minimize redundant Laravel calls per set
 _ANSWER_KEY_CACHE = {}
+_STUDENT_ROSTER_CACHE = {}
 
 
 def _get_cached_answer_key(client, class_test_id, exam_set):
@@ -32,6 +33,39 @@ def _get_cached_answer_key(client, class_test_id, exam_set):
     except Exception as e:
         logger.warning(f"Failed to fetch answer key for Set {exam_set}: {e}")
     return None
+
+
+def _get_cached_student_roster(client, class_test_id):
+    """
+    Pre-fetch and cache the full student roster for a class test in memory.
+    Indexes students by numeric reg_no and numeric class_role for instant O(1) matching.
+    """
+    if class_test_id in _STUDENT_ROSTER_CACHE:
+        return _STUDENT_ROSTER_CACHE[class_test_id]
+
+    roster = {}
+    try:
+        info = client.get_class_test_info(class_test_id)
+        students = info.get('students', [])
+        for s in students:
+            reg_no = str(s.get('reg_no') or '')
+            digits_reg = ''.join(ch for ch in reg_no if ch.isdigit())
+            if digits_reg:
+                roster[digits_reg] = s
+                roster[digits_reg.lstrip('0')] = s
+
+            role = str(s.get('class_role') or '')
+            digits_role = ''.join(ch for ch in role if ch.isdigit())
+            if digits_role:
+                roster[digits_role] = s
+                roster[digits_role.lstrip('0')] = s
+
+        _STUDENT_ROSTER_CACHE[class_test_id] = roster
+        logger.info(f"Loaded {len(students)} students into roster cache for Class Test #{class_test_id}")
+    except Exception as e:
+        logger.warning(f"Failed to prefetch student roster for test {class_test_id}: {e}")
+
+    return roster
 
 
 def get_available_templates():
@@ -100,26 +134,33 @@ def process_single_scan_helper(scan, fpath, batch, client=None, template_path=No
                     scan.wrong_count = score_res['wrong']
                     scan.unattempted_count = score_res['unattempted']
 
-            # Match student with Laravel
+            # Match student with Laravel (in-memory fast lookup first, fallback to API)
             if scan.student_numeric_id:
-                try:
-                    student_data = client.find_student(batch.class_test_id, scan.student_numeric_id)
-                    if student_data and 'item_id' in student_data:
-                        scan.item_id = student_data['item_id']
-                        scan.student_id = student_data['student_id']
-                        scan.student_name = student_data.get('name')
-                        scan.student_reg_no = student_data.get('reg_no')
-                        scan.is_matched = True
-                        scan.status = 'matched'
-                        scan.error_message = None
-                    else:
-                        scan.is_matched = False
-                        scan.status = 'unmatched'
-                        scan.error_message = f"রোল {scan.student_numeric_id} রস্টারে পাওয়া যায়নি"
-                except Exception as e:
+                roster = _get_cached_student_roster(client, batch.class_test_id)
+                num_id = str(scan.student_numeric_id).strip()
+                student_data = roster.get(num_id) or roster.get(num_id.lstrip('0'))
+
+                # Fallback to single live API lookup if student not in pre-fetched roster
+                if not student_data:
+                    try:
+                        student_data = client.find_student(batch.class_test_id, scan.student_numeric_id)
+                        if student_data and 'item_id' in student_data:
+                            roster[num_id] = student_data
+                    except Exception as e:
+                        logger.warning(f"Fallback student lookup error for {num_id}: {e}")
+
+                if student_data and 'item_id' in student_data:
+                    scan.item_id = student_data['item_id']
+                    scan.student_id = student_data['student_id']
+                    scan.student_name = student_data.get('name')
+                    scan.student_reg_no = student_data.get('reg_no')
+                    scan.is_matched = True
+                    scan.status = 'matched'
+                    scan.error_message = None
+                else:
                     scan.is_matched = False
                     scan.status = 'unmatched'
-                    scan.error_message = f"লারাভেল লুকআপ ব্যর্থ: {e}"
+                    scan.error_message = f"রোল {scan.student_numeric_id} রস্টারে পাওয়া যায়নি"
             else:
                 scan.is_matched = False
                 scan.status = 'unmatched'
@@ -889,8 +930,8 @@ def standalone_upload_single_ajax(request, exam_id):
         res_obj.error_message = str(e)
 
     res_obj.save()
-    exam.recalculate_ranks()
-    res_obj.refresh_from_db()
+    exam.total_sheets = exam.results.count()
+    exam.save(update_fields=['total_sheets'])
 
     return JsonResponse({
         'success': True,
@@ -908,9 +949,28 @@ def standalone_upload_single_ajax(request, exam_id):
     })
 
 
+@require_POST
+def standalone_finalize_ranks_ajax(request, exam_id):
+    """
+    Finalizes merit ranks for an exam in a single fast bulk_update operation.
+    Called once when all parallel/sequential uploads finish.
+    """
+    exam = get_object_or_404(StandaloneExam, id=exam_id)
+    exam.recalculate_ranks()
+    return JsonResponse({
+        'success': True,
+        'total_evaluated': exam.total_sheets
+    })
+
+
 def standalone_results(request, exam_id):
     """View merit list, tabulation, and search by roll number."""
     exam = get_object_or_404(StandaloneExam, id=exam_id)
+
+    # Auto-recalculate ranks if any unranked records exist
+    if exam.results.filter(rank=0).exists():
+        exam.recalculate_ranks()
+
     query = request.GET.get('q', '').strip()
     set_filter = request.GET.get('set', '').strip().upper()
 
@@ -944,6 +1004,8 @@ def standalone_print(request, exam_id):
     with customizable institution branding (name, address, logo, footer).
     """
     exam = get_object_or_404(StandaloneExam, id=exam_id)
+    if exam.results.filter(rank=0).exists():
+        exam.recalculate_ranks()
     results = exam.results.all().order_by('rank', '-marks', 'roll_no')
     institute = InstituteSettings.get_settings()
 

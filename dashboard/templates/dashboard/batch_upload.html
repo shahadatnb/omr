@@ -421,62 +421,77 @@ async function startProcessing() {
     }
 }
 
-// Queue for browser selected files
+// Queue for browser selected files (4 Parallel Workers)
 async function processBrowserFilesQueue() {
     const total = selectedFilesList.length;
     let processed = 0;
     let matched = 0;
     let unmatched = 0;
+    let nextIndex = 0;
+    const CONCURRENCY = 4; // 4 Concurrent Upload Workers
 
     document.getElementById('statTotal').innerText = total;
 
-    for (let i = 0; i < total; i++) {
-        const file = selectedFilesList[i];
-        const percent = Math.round(((i) / total) * 100);
-        updateProgressBar(percent, `${percent}% (${i} of ${total} files)`);
-        document.getElementById('currentStatusText').innerHTML = `<strong>প্রসেসিং হচ্ছে (${i + 1}/${total}):</strong> ${file.name}`;
+    async function worker() {
+        while (nextIndex < total && isProcessing) {
+            const i = nextIndex++;
+            const file = selectedFilesList[i];
 
-        const fileFormData = new FormData();
-        fileFormData.append('file', file);
+            const fileFormData = new FormData();
+            fileFormData.append('file', file);
 
-        try {
-            const resp = await fetch(`/dashboard/batch/${currentBatchId}/upload-single-ajax/`, {
-                method: 'POST',
-                headers: { 'X-CSRFToken': getCookie('csrftoken') },
-                body: fileFormData
-            });
-            const data = await resp.json();
+            try {
+                const resp = await fetch(`/dashboard/batch/${currentBatchId}/upload-single-ajax/`, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': getCookie('csrftoken') },
+                    body: fileFormData
+                });
+                const data = await resp.json();
 
-            processed++;
-            if (data.is_matched) matched++;
-            else unmatched++;
+                processed++;
+                if (data.is_matched) matched++;
+                else unmatched++;
 
-            appendLiveRow(processed, data);
-            document.getElementById('statProcessed').innerText = processed;
-            document.getElementById('statMatched').innerText = matched;
-            document.getElementById('statUnmatched').innerText = unmatched;
+                appendLiveRow(processed, data);
+                document.getElementById('statProcessed').innerText = processed;
+                document.getElementById('statMatched').innerText = matched;
+                document.getElementById('statUnmatched').innerText = unmatched;
 
-        } catch (err) {
-            console.error(err);
-            processed++;
-            unmatched++;
-            appendLiveRow(processed, {
-                filename: file.name,
-                student_numeric_id: 'Error',
-                exam_set: '-',
-                student_name: 'প্রসেসিং ত্রুটি',
-                marks: 0,
-                status: 'error',
-                error_message: err.message
-            });
+            } catch (err) {
+                console.error(err);
+                processed++;
+                unmatched++;
+                appendLiveRow(processed, {
+                    filename: file.name,
+                    student_numeric_id: 'Error',
+                    exam_set: '-',
+                    student_name: 'প্রসেসিং ত্রুটি',
+                    marks: 0,
+                    status: 'error',
+                    error_message: err.message
+                });
+                document.getElementById('statProcessed').innerText = processed;
+                document.getElementById('statUnmatched').innerText = unmatched;
+            }
+
+            const percent = Math.round((processed / total) * 100);
+            updateProgressBar(percent, `${percent}% (${processed} of ${total} files)`);
+            document.getElementById('currentStatusText').innerHTML = `<strong>সমান্তরাল প্রসেসিং চলছে (৪টি থ্রেডে):</strong> ${processed}/${total} সম্পন্ন`;
         }
     }
+
+    const workers = [];
+    const numWorkers = Math.min(CONCURRENCY, total);
+    for (let w = 0; w < numWorkers; w++) {
+        workers.push(worker());
+    }
+    await Promise.all(workers);
 
     // Complete!
     finalizeProgress(total, matched, unmatched);
 }
 
-// Queue for server local folder
+// Queue for server local folder (4 Parallel Workers)
 async function processServerFolderQueue(folderPath) {
     document.getElementById('currentStatusText').innerHTML = 'ফোল্ডারের ফাইল তালিকা স্ক্যান করা হচ্ছে...';
 
@@ -501,33 +516,67 @@ async function processServerFolderQueue(folderPath) {
     let processed = 0;
     let matched = 0;
     let unmatched = 0;
+    let nextIndex = 0;
+    const CONCURRENCY = 4; // 4 Parallel Server Processing Workers
 
     document.getElementById('statTotal').innerText = total;
 
-    for (let i = 0; i < total; i++) {
-        const item = items[i];
-        const percent = Math.round(((i) / total) * 100);
-        updateProgressBar(percent, `${percent}% (${i} of ${total} files)`);
-        document.getElementById('currentStatusText').innerHTML = `<strong>প্রসেসিং হচ্ছে (${i + 1}/${total}):</strong> ${item.filename}`;
+    async function serverWorker() {
+        while (nextIndex < total && isProcessing) {
+            const i = nextIndex++;
+            const item = items[i];
 
-        const itemFormData = new FormData();
-        itemFormData.append('fpath', item.fpath);
+            const itemFormData = new FormData();
+            itemFormData.append('fpath', item.fpath);
 
-        try {
-            const resp = await fetch(`/dashboard/batch/${currentBatchId}/process-item-ajax/${item.scan_id}/`, {
-                method: 'POST',
-                headers: { 'X-CSRFToken': getCookie('csrftoken') },
-                body: itemFormData
-            });
-            const data = await resp.json();
+            try {
+                const resp = await fetch(`/dashboard/batch/${currentBatchId}/process-item-ajax/${item.scan_id}/`, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': getCookie('csrftoken') },
+                    body: itemFormData
+                });
+                const data = await resp.json();
 
-            processed++;
-            if (data.is_matched) matched++;
-            else unmatched++;
+                processed++;
+                if (data.is_matched) matched++;
+                else unmatched++;
 
-            appendLiveRow(processed, data);
-            document.getElementById('statProcessed').innerText = processed;
-            document.getElementById('statMatched').innerText = matched;
+                appendLiveRow(processed, data);
+                document.getElementById('statProcessed').innerText = processed;
+                document.getElementById('statMatched').innerText = matched;
+                document.getElementById('statUnmatched').innerText = unmatched;
+
+            } catch (err) {
+                console.error(err);
+                processed++;
+                unmatched++;
+                appendLiveRow(processed, {
+                    filename: item.filename,
+                    student_numeric_id: 'Error',
+                    exam_set: '-',
+                    student_name: 'প্রসেসিং ত্রুটি',
+                    marks: 0,
+                    status: 'error',
+                    error_message: err.message
+                });
+            }
+
+            const percent = Math.round((processed / total) * 100);
+            updateProgressBar(percent, `${percent}% (${processed} of ${total} files)`);
+            document.getElementById('currentStatusText').innerHTML = `<strong>সমান্তরাল প্রসেসিং চলছে (৪টি থ্রেডে):</strong> ${processed}/${total} সম্পন্ন`;
+        }
+    }
+
+    const workers = [];
+    const numWorkers = Math.min(CONCURRENCY, total);
+    for (let w = 0; w < numWorkers; w++) {
+        workers.push(serverWorker());
+    }
+    await Promise.all(workers);
+
+    // Complete!
+    finalizeProgress(total, matched, unmatched);
+}
             document.getElementById('statUnmatched').innerText = unmatched;
 
         } catch (err) {

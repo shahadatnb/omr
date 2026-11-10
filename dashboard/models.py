@@ -109,14 +109,20 @@ class StandaloneExam(models.Model):
         return {}
 
     def recalculate_ranks(self):
-        """Sort results by marks desc and assign merit rank."""
-        results = self.results.all().order_by('-marks', 'unattempted_count')
+        """Sort results by marks desc and assign merit rank using fast bulk_update."""
+        results = list(self.results.all().order_by('-marks', 'unattempted_count'))
+        if not results:
+            self.total_sheets = 0
+            self.save(update_fields=['total_sheets'])
+            return
+
         current_rank = 1
         for res in results:
             res.rank = current_rank
-            res.save(update_fields=['rank'])
             current_rank += 1
-        self.total_sheets = results.count()
+
+        StandaloneResult.objects.bulk_update(results, ['rank'], batch_size=500)
+        self.total_sheets = len(results)
         self.save(update_fields=['total_sheets'])
 
     def __str__(self):

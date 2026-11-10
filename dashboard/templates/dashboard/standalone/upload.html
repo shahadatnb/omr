@@ -210,42 +210,67 @@ async function startProcessing() {
     const total = selectedFilesList.length;
     let processed = 0;
     let errors = 0;
+    let nextIndex = 0;
+    const CONCURRENCY = 4; // 4 Parallel Workers
 
     document.getElementById('statTotal').innerText = total;
 
-    for (let i = 0; i < total; i++) {
-        const file = selectedFilesList[i];
-        const percent = Math.round(((i) / total) * 100);
-        document.getElementById('progressBar').style.width = percent + '%';
-        document.getElementById('progressBar').innerText = `${percent}% (${i}/${total})`;
-        document.getElementById('currentStatusText').innerHTML = `<strong>মূল্যায়ন হচ্ছে (${i + 1}/${total}):</strong> ${file.name}`;
+    async function worker() {
+        while (nextIndex < total) {
+            const i = nextIndex++;
+            const file = selectedFilesList[i];
 
-        const formData = new FormData();
-        formData.append('file', file);
+            const formData = new FormData();
+            formData.append('file', file);
 
-        try {
-            const resp = await fetch(`/dashboard/standalone/${examId}/upload-single-ajax/`, {
-                method: 'POST',
-                headers: { 'X-CSRFToken': getCookie('csrftoken') },
-                body: formData
-            });
-            const data = await resp.json();
+            try {
+                const resp = await fetch(`/dashboard/standalone/${examId}/upload-single-ajax/`, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': getCookie('csrftoken') },
+                    body: formData
+                });
+                const data = await resp.json();
 
-            processed++;
-            if (data.error_message) errors++;
+                processed++;
+                if (data.error_message) errors++;
 
-            document.getElementById('statProcessed').innerText = processed;
-            document.getElementById('statError').innerText = errors;
+                document.getElementById('statProcessed').innerText = processed;
+                document.getElementById('statError').innerText = errors;
 
-            appendLiveRow(processed, data);
+                appendLiveRow(processed, data);
 
-        } catch (err) {
-            console.error(err);
-            processed++;
-            errors++;
-            document.getElementById('statProcessed').innerText = processed;
-            document.getElementById('statError').innerText = errors;
+            } catch (err) {
+                console.error(err);
+                processed++;
+                errors++;
+                document.getElementById('statProcessed').innerText = processed;
+                document.getElementById('statError').innerText = errors;
+            }
+
+            const percent = Math.round((processed / total) * 100);
+            document.getElementById('progressBar').style.width = percent + '%';
+            document.getElementById('progressBar').innerText = `${percent}% (${processed}/${total})`;
+            document.getElementById('currentStatusText').innerHTML = `<strong>সমান্তরাল মূল্যায়ন চলছে (৪টি থ্রেডে):</strong> ${processed}/${total} সম্পন্ন`;
         }
+    }
+
+    // Launch workers in parallel
+    const workers = [];
+    const numWorkers = Math.min(CONCURRENCY, total);
+    for (let w = 0; w < numWorkers; w++) {
+        workers.push(worker());
+    }
+    await Promise.all(workers);
+
+    // Finalize merit ranking in one fast batch
+    document.getElementById('currentStatusText').innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> মেরিট র‍্যাঙ্ক চূড়ান্ত করা হচ্ছে...';
+    try {
+        await fetch(`/dashboard/standalone/${examId}/finalize-ranks-ajax/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        });
+    } catch (e) {
+        console.warn("Finalize ranks error:", e);
     }
 
     // Complete
