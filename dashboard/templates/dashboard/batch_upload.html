@@ -577,26 +577,6 @@ async function processServerFolderQueue(folderPath) {
     // Complete!
     finalizeProgress(total, matched, unmatched);
 }
-            document.getElementById('statUnmatched').innerText = unmatched;
-
-        } catch (err) {
-            console.error(err);
-            processed++;
-            unmatched++;
-            appendLiveRow(processed, {
-                filename: item.filename,
-                student_numeric_id: 'Error',
-                exam_set: '-',
-                student_name: 'প্রসেসিং ত্রুটি',
-                marks: 0,
-                status: 'error',
-                error_message: err.message
-            });
-        }
-    }
-
-    finalizeProgress(total, matched, unmatched);
-}
 
 function updateProgressBar(percent, text) {
     const bar = document.getElementById('progressBar');
