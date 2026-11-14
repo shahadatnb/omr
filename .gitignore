@@ -33,6 +33,7 @@ staticfiles/
 media/scans/
 media/standalone_scans/
 media/settings/
+media/temp_keys/
 # Keep sample template images for canvas
 !media/templates/
 !media/templates/*.jpg

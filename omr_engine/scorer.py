@@ -58,16 +58,36 @@ def calculate_score(student_answers, answer_key, correct_mark=1.0, wrong_mark=-0
             logger.debug(f"Q{q_num}: Not in answer key, skipping")
             continue
 
-        # উত্তরের মান নির্ধারণ করো
-        if student_ans is None:
-            unattempted += 1
-            logger.debug(f"Q{q_num}: Unattempted")
-        elif str(student_ans).upper() == str(correct_ans).upper():
-            correct += 1
-            logger.debug(f"Q{q_num}: Correct ({student_ans})")
+        c_upper = str(correct_ans).strip().upper()
+        has_student_ans = student_ans is not None and str(student_ans).strip() != ''
+
+        if c_upper == 'ANY':
+            # যেকোনোটা ফিল করলেই আনসার সঠিক হবে
+            if has_student_ans:
+                correct += 1
+                logger.debug(f"Q{q_num}: Correct (ANY filled, student={student_ans})")
+            else:
+                unattempted += 1
+                logger.debug(f"Q{q_num}: Unattempted (ANY not filled)")
+        elif c_upper == 'NONE':
+            # কোনোটা ফিল না করলেই আনসার সঠিক হবে
+            if not has_student_ans:
+                correct += 1
+                logger.debug(f"Q{q_num}: Correct (NONE - left blank)")
+            else:
+                wrong += 1
+                logger.debug(f"Q{q_num}: Wrong (NONE expected but student filled {student_ans})")
         else:
-            wrong += 1
-            logger.debug(f"Q{q_num}: Wrong (student={student_ans}, correct={correct_ans})")
+            # উত্তরের সাধারণ মান নির্ধারণ করো
+            if not has_student_ans:
+                unattempted += 1
+                logger.debug(f"Q{q_num}: Unattempted")
+            elif str(student_ans).strip().upper() == c_upper:
+                correct += 1
+                logger.debug(f"Q{q_num}: Correct ({student_ans})")
+            else:
+                wrong += 1
+                logger.debug(f"Q{q_num}: Wrong (student={student_ans}, correct={correct_ans})")
 
     # মোট marks হিসাব করো
     raw_marks = (correct * correct_mark) + (wrong * wrong_mark)
@@ -122,15 +142,33 @@ def calculate_score_per_question(student_answers, answer_key, correct_mark=1.0, 
         if correct_ans is None:
             status = 'not_in_key'
             mark = 0.0
-        elif student_ans is None:
-            status = 'unattempted'
-            mark = 0.0
-        elif str(student_ans).upper() == str(correct_ans).upper():
-            status = 'correct'
-            mark = correct_mark
         else:
-            status = 'wrong'
-            mark = wrong_mark
+            c_upper = str(correct_ans).strip().upper()
+            has_student_ans = student_ans is not None and str(student_ans).strip() != ''
+
+            if c_upper == 'ANY':
+                if has_student_ans:
+                    status = 'correct'
+                    mark = correct_mark
+                else:
+                    status = 'unattempted'
+                    mark = 0.0
+            elif c_upper == 'NONE':
+                if not has_student_ans:
+                    status = 'correct'
+                    mark = correct_mark
+                else:
+                    status = 'wrong'
+                    mark = wrong_mark
+            elif not has_student_ans:
+                status = 'unattempted'
+                mark = 0.0
+            elif str(student_ans).strip().upper() == c_upper:
+                status = 'correct'
+                mark = correct_mark
+            else:
+                status = 'wrong'
+                mark = wrong_mark
 
         per_question[q_num] = {
             'student_answer': student_ans,
@@ -154,7 +192,7 @@ def validate_answer_key(answer_key, expected_count=100):
         dict: {'valid': bool, 'errors': list}
     """
     errors = []
-    valid_options = {'A', 'B', 'C', 'D'}
+    valid_options = {'A', 'B', 'C', 'D', 'ANY', 'NONE'}
 
     if not isinstance(answer_key, dict):
         return {'valid': False, 'errors': ['Answer key must be a dictionary']}
@@ -164,7 +202,7 @@ def validate_answer_key(answer_key, expected_count=100):
 
     for q_num, answer in answer_key.items():
         if str(answer).upper() not in valid_options:
-            errors.append(f"Q{q_num}: Invalid answer '{answer}' (must be A/B/C/D)")
+            errors.append(f"Q{q_num}: Invalid answer '{answer}' (must be A/B/C/D/ANY/NONE)")
 
     return {
         'valid': len(errors) == 0,

@@ -566,9 +566,13 @@ async function loadStudentAnswers(resultId) {
             let contentHtml = '';
 
             if (item.status === 'correct') {
-                contentHtml = `<strong class="text-success"><i class="fa fa-check"></i> ${item.student_ans}</strong>`;
+                let ansText = item.student_ans;
+                if (!ansText && item.correct_ans === 'NONE') {
+                    ansText = 'ফাঁকা';
+                }
+                contentHtml = `<strong class="text-success"><i class="fa fa-check"></i> ${ansText || '✓'}</strong> <small class="text-muted">(সঠিক: <strong>${item.correct_ans}</strong>)</small>`;
             } else if (item.status === 'wrong') {
-                contentHtml = `<strong class="text-danger"><i class="fa fa-times"></i> ${item.student_ans}</strong> <small class="text-muted">(সঠিক: <strong>${item.correct_ans}</strong>)</small>`;
+                contentHtml = `<strong class="text-danger"><i class="fa fa-times"></i> ${item.student_ans || '—'}</strong> <small class="text-muted">(সঠিক: <strong>${item.correct_ans}</strong>)</small>`;
             } else {
                 contentHtml = `<span class="text-muted">—</span> <small class="text-muted">(সঠিক: ${item.correct_ans || '?'})</small>`;
             }

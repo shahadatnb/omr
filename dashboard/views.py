@@ -927,12 +927,92 @@ def standalone_answer_key(request, exam_id):
     active_set = request.GET.get('active_set', 'A').upper()
     current_key = exam.get_answer_key(active_set)
 
+    import math
+    total = exam.total_questions
+    cols_count = 4
+    per_col = math.ceil(total / cols_count) if total > 0 else 1
+    question_columns = []
+    for c in range(cols_count):
+        start = c * per_col + 1
+        end = min((c + 1) * per_col + 1, total + 1)
+        if start <= total:
+            question_columns.append(list(range(start, end)))
+
     return render(request, 'dashboard/standalone/answer_key.html', {
         'exam': exam,
         'active_set': active_set,
         'current_key': current_key,
         'questions_range': range(1, exam.total_questions + 1),
+        'question_columns': question_columns,
     })
+
+
+@require_POST
+def standalone_scan_key_sheet_ajax(request, exam_id):
+    """
+    Scan a filled-up master OMR sheet image to automatically extract and populate the Answer Key.
+    """
+    exam = get_object_or_404(StandaloneExam, id=exam_id)
+
+    if 'file' not in request.FILES:
+        return JsonResponse({'success': False, 'error': 'কোনো ছবি আপলোড করা হয়নি।'}, status=400)
+
+    f = request.FILES['file']
+    valid_exts = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp'}
+    ext = os.path.splitext(f.name)[1].lower()
+    if ext not in valid_exts:
+        return JsonResponse({'success': False, 'error': f'অবৈধ ফাইল ফরম্যাট: {ext}। অনুগ্রহ করে ছবি (JPG/PNG) আপলোড করুন।'}, status=400)
+
+    # Save to media/temp_keys/
+    temp_dir = os.path.join(settings.MEDIA_ROOT, 'temp_keys')
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_filename = f"master_key_{exam.id}_{int(timezone.now().timestamp())}_{f.name}"
+    temp_path = os.path.join(temp_dir, temp_filename)
+
+    with open(temp_path, 'wb+') as destination:
+        for chunk in f.chunks():
+            destination.write(chunk)
+
+    template_path = get_template_path(exam.template_name, default='offline_exam_100q.json')
+
+    try:
+        omr_res = process_sheet(temp_path, template_path, debug=False)
+        if omr_res.get('success'):
+            raw_answers = omr_res.get('answers', {})
+            # Filter and normalize: only questions within 1..exam.total_questions
+            answers = {}
+            for q_str, ans in raw_answers.items():
+                try:
+                    q_int = int(q_str)
+                    if 1 <= q_int <= exam.total_questions and ans:
+                        answers[str(q_int)] = str(ans).upper()
+                except (ValueError, TypeError):
+                    pass
+
+            detected_set = omr_res.get('exam_set')
+            if detected_set:
+                detected_set = str(detected_set).upper()
+
+            # Generate public URL for preview if needed
+            rel_path = os.path.relpath(temp_path, settings.MEDIA_ROOT).replace('\\', '/')
+            image_url = f"{settings.MEDIA_URL}{rel_path}"
+
+            return JsonResponse({
+                'success': True,
+                'answers': answers,
+                'total_filled': len(answers),
+                'total_questions': exam.total_questions,
+                'detected_set': detected_set,
+                'image_url': image_url,
+                'message': f"ওএমআর শিট থেকে সফলভাবে {len(answers)}টি উত্তর শনাক্ত করা হয়েছে!"
+            })
+        else:
+            err = omr_res.get('error', 'ওএমআর শিটের কোণা বা বাবল শনাক্ত করতে ব্যর্থ হয়েছে। অনুগ্রহ করে সোজা ও স্পষ্ট স্ক্যান কপি দিন।')
+            return JsonResponse({'success': False, 'error': err}, status=400)
+
+    except Exception as e:
+        logger.exception("Error processing master answer sheet")
+        return JsonResponse({'success': False, 'error': f'প্রসেসিং ত্রুটি: {str(e)}'}, status=500)
 
 
 def standalone_upload(request, exam_id):
@@ -1117,14 +1197,27 @@ def standalone_result_detail_ajax(request, result_id):
         student_ans = res.answers_json.get(q_str) or res.answers_json.get(q)
         correct_ans = ak.get(q_str) or ak.get(q)
 
-        if not student_ans:
+        c_upper = str(correct_ans).strip().upper() if correct_ans else None
+        has_student_ans = bool(student_ans and str(student_ans).strip())
+
+        if not correct_ans:
+            status = 'unattempted' if not has_student_ans else 'unknown'
+        elif c_upper == 'ANY':
+            if has_student_ans:
+                status = 'correct'
+            else:
+                status = 'unattempted'
+        elif c_upper == 'NONE':
+            if not has_student_ans:
+                status = 'correct'
+            else:
+                status = 'wrong'
+        elif not has_student_ans:
             status = 'unattempted'
-        elif correct_ans and student_ans.upper() == correct_ans.upper():
+        elif str(student_ans).strip().upper() == c_upper:
             status = 'correct'
-        elif correct_ans:
-            status = 'wrong'
         else:
-            status = 'unknown'
+            status = 'wrong'
 
         breakdown.append({
             'q': q,

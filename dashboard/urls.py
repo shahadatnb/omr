@@ -37,6 +37,7 @@ urlpatterns = [
     path('standalone/', views.standalone_list, name='standalone_list'),
     path('standalone/create/', views.standalone_create, name='standalone_create'),
     path('standalone/<int:exam_id>/keys/', views.standalone_answer_key, name='standalone_answer_key'),
+    path('standalone/<int:exam_id>/scan-key-sheet-ajax/', views.standalone_scan_key_sheet_ajax, name='standalone_scan_key_sheet_ajax'),
     path('standalone/<int:exam_id>/upload/', views.standalone_upload, name='standalone_upload'),
     path('standalone/<int:exam_id>/upload-single-ajax/', views.standalone_upload_single_ajax, name='standalone_upload_single_ajax'),
     path('standalone/<int:exam_id>/finalize-ranks-ajax/', views.standalone_finalize_ranks_ajax, name='standalone_finalize_ranks_ajax'),
