@@ -77,12 +77,18 @@
                             <!-- Searchable / Select Student -->
                             <div class="mb-3">
                                 <label for="item_id" class="form-label fw-bold">
-                                    শিক্ষার্থী নির্বাচন করুন <span class="text-danger">*</span>
+                                    শিক্ষার্থী নির্বাচন করুন {% if not result.is_matched %}<span class="text-danger">*</span>{% endif %}
                                 </label>
+                                {% if result.is_matched %}
+                                <div class="alert alert-info py-2 small mb-2">
+                                    <i class="fa fa-user-check me-1"></i> বর্তমানে নির্ধারিত শিক্ষার্থী: <strong>{{ result.student_name }}</strong> (Reg: {{ result.student_reg_no }})
+                                    <div class="text-muted">শিক্ষার্থী ঠিক থাকলে নিচে শুধু <strong>প্রশ্ন সেট</strong> পরিবর্তন করে সংরক্ষণ করতে পারেন। অন্য শিক্ষার্থী নির্ধারণ করতে চাইলে তালিকা থেকে বাছাই করুন।</div>
+                                </div>
+                                {% endif %}
                                 <input type="text" class="form-control mb-2" id="studentFilter" placeholder="🔍 নাম বা রেজিস্ট্রেশন নম্বর দিয়ে ফিল্টার করুন..." onkeyup="filterStudents()">
                                 
-                                <select class="form-select form-select-lg" id="item_id" name="item_id" size="8" required>
-                                    <option value="" disabled>-- শিক্ষার্থী নির্বাচন করুন --</option>
+                                <select class="form-select form-select-lg" id="item_id" name="item_id" size="7" {% if not result.is_matched %}required{% endif %}>
+                                    <option value="" disabled {% if not result.item_id %}selected{% endif %}>-- শিক্ষার্থী নির্বাচন করুন --</option>
                                     {% for s in enrolled_students %}
                                         <option value="{{ s.item_id }}" {% if result.item_id == s.item_id %}selected{% endif %}>
                                             {{ s.reg_no }} — {{ s.name }} (Roll: {{ s.class_role|default:'N/A' }})

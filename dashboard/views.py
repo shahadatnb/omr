@@ -9,9 +9,16 @@ from django.conf import settings
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .models import BatchJob, ScanResult, StandaloneExam, StandaloneResult, InstituteSettings
+from .models import BatchJob, ScanResult, StandaloneExam, StandaloneResult, InstituteSettings, ModemSettings
 from omr_engine.sheet_processor import process_sheet
 from omr_engine.scorer import calculate_score
+from omr_engine.modem_sms import (
+    list_com_ports,
+    normalize_bd_phone,
+    test_modem,
+    send_sms_via_modem,
+    render_sms_template,
+)
 from integration.laravel_client import LaravelOmrClient
 
 logger = logging.getLogger(__name__)
@@ -22,16 +29,17 @@ _STUDENT_ROSTER_CACHE = {}
 
 
 def _get_cached_answer_key(client, class_test_id, exam_set):
-    cache_key = f"{class_test_id}_{exam_set.upper()}"
+    set_clean = (exam_set or 'A').upper()
+    cache_key = f"{class_test_id}_{set_clean}"
     if cache_key in _ANSWER_KEY_CACHE:
         return _ANSWER_KEY_CACHE[cache_key]
     try:
-        ak = client.get_answer_key(class_test_id, exam_set)
+        ak = client.get_answer_key(class_test_id, set_clean)
         if ak and 'answers' in ak:
             _ANSWER_KEY_CACHE[cache_key] = ak
             return ak
     except Exception as e:
-        logger.warning(f"Failed to fetch answer key for Set {exam_set}: {e}")
+        logger.warning(f"Failed to fetch answer key for Set {set_clean}: {e}")
     return None
 
 
@@ -451,41 +459,106 @@ def manual_edit(request, result_id):
             result.student_name = chosen_student['name']
             result.student_reg_no = chosen_student['reg_no']
             result.student_numeric_id = custom_numeric_id or ''.join(filter(str.isdigit, str(chosen_student['reg_no'])))
-            result.exam_set = exam_set
             result.is_matched = True
-            result.is_manually_edited = True
-            result.status = 'manual'
-            result.error_message = None
-
-            # Recalculate score with the chosen set
-            try:
-                ak = _get_cached_answer_key(client, batch.class_test_id, exam_set)
-                if ak and 'answers' in ak:
-                    score_res = calculate_score(
-                        result.answers_json,
-                        ak['answers'],
-                        correct_mark=ak.get('correct_mark', 1.0),
-                        wrong_mark=ak.get('wrong_mark', -0.25)
-                    )
-                    result.marks = score_res['marks']
-                    result.correct_count = score_res['correct']
-                    result.wrong_count = score_res['wrong']
-                    result.unattempted_count = score_res['unattempted']
-            except Exception as ex:
-                logger.warning(f"Error recalculating score during manual edit: {ex}")
-
-            result.save()
-            batch.update_stats()
-
-            messages.success(request, f"Sheet manually mapped to student: {result.student_name} ({result.student_reg_no}). Score: {result.marks}")
-            return redirect('dashboard:batch_detail', batch_id=batch.id)
+        elif result.is_matched and result.item_id:
+            # Student was already matched; keep current student and allow updating numeric id if given
+            if custom_numeric_id:
+                result.student_numeric_id = custom_numeric_id
         else:
-            messages.error(request, 'Please select a student from the list.')
+            messages.error(request, 'অনুগ্রহ করে তালিকা থেকে শিক্ষার্থী নির্বাচন করুন।')
+            return render(request, 'dashboard/manual_edit.html', {
+                'result': result,
+                'batch': batch,
+                'enrolled_students': enrolled_students,
+            })
+
+        result.exam_set = exam_set
+        result.is_manually_edited = True
+        result.status = 'manual'
+        result.error_message = None
+
+        # Recalculate score with the chosen set
+        try:
+            ak = _get_cached_answer_key(client, batch.class_test_id, exam_set)
+            if ak and 'answers' in ak:
+                score_res = calculate_score(
+                    result.answers_json,
+                    ak['answers'],
+                    correct_mark=ak.get('correct_mark', 1.0),
+                    wrong_mark=ak.get('wrong_mark', -0.25)
+                )
+                result.marks = score_res['marks']
+                result.correct_count = score_res['correct']
+                result.wrong_count = score_res['wrong']
+                result.unattempted_count = score_res['unattempted']
+            else:
+                messages.warning(request, f"Set {exam_set}-এর Answer Key লারাভেলে পাওয়া যায়নি।")
+        except Exception as ex:
+            logger.warning(f"Error recalculating score during manual edit: {ex}")
+
+        result.save()
+        batch.update_stats()
+
+        messages.success(request, f"ওএমআর শিট সফলভাবে হালনাগাদ করা হয়েছে (সেট: {result.exam_set})। প্রাপ্ত নম্বর: {result.marks}")
+        return redirect('dashboard:batch_detail', batch_id=batch.id)
 
     return render(request, 'dashboard/manual_edit.html', {
         'result': result,
         'batch': batch,
         'enrolled_students': enrolled_students,
+    })
+
+
+@require_POST
+def scan_result_change_set_ajax(request, result_id):
+    """
+    AJAX endpoint to quickly correct the exam set of a ScanResult (online/batch).
+    Recalculates score immediately against the new set's answer key.
+    """
+    result = get_object_or_404(ScanResult, id=result_id)
+    batch = result.batch
+    new_set = request.POST.get('exam_set', '').strip().upper()
+
+    if new_set not in ['A', 'B', 'C', 'D']:
+        return JsonResponse({'success': False, 'error': 'অবৈধ সেট। শুধু A, B, C অথবা D নির্বাচন করুন।'}, status=400)
+
+    result.exam_set = new_set
+    result.is_manually_edited = True
+    if result.status == 'matched':
+        result.status = 'manual'
+
+    # Recalculate score
+    client = LaravelOmrClient(base_url=settings.LARAVEL_API_URL)
+    ak = _get_cached_answer_key(client, batch.class_test_id, new_set)
+    if ak and 'answers' in ak:
+        score_res = calculate_score(
+            result.answers_json,
+            ak['answers'],
+            correct_mark=ak.get('correct_mark', 1.0),
+            wrong_mark=ak.get('wrong_mark', -0.25)
+        )
+        result.marks = score_res['marks']
+        result.correct_count = score_res['correct']
+        result.wrong_count = score_res['wrong']
+        result.unattempted_count = score_res['unattempted']
+        result.error_message = None
+    else:
+        result.error_message = f"Set {new_set}-এর কোনো Answer Key লারাভেলে পাওয়া যায়নি।"
+
+    result.save()
+    batch.update_stats()
+
+    return JsonResponse({
+        'success': True,
+        'id': result.id,
+        'exam_set': result.exam_set,
+        'marks': round(result.marks, 2),
+        'correct_count': result.correct_count,
+        'wrong_count': result.wrong_count,
+        'unattempted_count': result.unattempted_count,
+        'status': result.status,
+        'error_message': result.error_message,
+        'message': f"সেট পরিবর্তন করে Set {new_set} করা হয়েছে এবং নম্বর পুনর্মূল্যায়ন হয়েছে।"
     })
 
 
@@ -907,6 +980,11 @@ def standalone_upload_single_ajax(request, exam_id):
             res_obj.exam_set = (omr_res.get('exam_set') or 'A').upper()
             res_obj.answers_json = omr_res.get('answers', {})
 
+            # Auto-detect if roll_no is a valid Bangladeshi mobile number bubbled by student
+            norm_phone = normalize_bd_phone(res_obj.roll_no)
+            if norm_phone['is_valid']:
+                res_obj.phone_number = norm_phone['local']
+
             ak = exam.get_answer_key(res_obj.exam_set)
             if ak:
                 score_res = calculate_score(
@@ -1071,6 +1149,115 @@ def standalone_result_detail_ajax(request, result_id):
     })
 
 
+@require_POST
+def standalone_result_change_set_ajax(request, result_id):
+    """
+    AJAX endpoint to correct the exam set of a StandaloneResult (offline).
+    Recalculates score and ranks immediately using local SQLite answer keys.
+    """
+    res = get_object_or_404(StandaloneResult, id=result_id)
+    exam = res.exam
+    new_set = request.POST.get('exam_set', '').strip().upper()
+
+    if new_set not in ['A', 'B', 'C', 'D']:
+        return JsonResponse({'success': False, 'error': 'অবৈধ সেট। শুধু A, B, C অথবা D নির্বাচন করুন।'}, status=400)
+
+    res.exam_set = new_set
+
+    # Recalculate score with local answer key
+    ak = exam.get_answer_key(new_set)
+    if ak:
+        score_res = calculate_score(
+            res.answers_json,
+            ak,
+            correct_mark=exam.correct_mark,
+            wrong_mark=exam.wrong_mark
+        )
+        res.marks = score_res['marks']
+        res.correct_count = score_res['correct']
+        res.wrong_count = score_res['wrong']
+        res.unattempted_count = score_res['unattempted']
+        res.error_message = None
+    else:
+        res.marks = 0.0
+        res.correct_count = 0
+        res.wrong_count = 0
+        res.unattempted_count = exam.total_questions
+        res.error_message = f"Set {new_set}-এর কোনো Answer Key সংজ্ঞায়িত করা হয়নি!"
+
+    res.save()
+    exam.recalculate_ranks()
+    res.refresh_from_db()
+
+    return JsonResponse({
+        'success': True,
+        'id': res.id,
+        'roll_no': res.roll_no,
+        'exam_set': res.exam_set,
+        'marks': round(res.marks, 2),
+        'correct_count': res.correct_count,
+        'wrong_count': res.wrong_count,
+        'unattempted_count': res.unattempted_count,
+        'rank': res.rank,
+        'error_message': res.error_message,
+        'message': f"সেট পরিবর্তন করে Set {new_set} করা হয়েছে এবং নম্বর ও মেধা ক্রম পুনর্মূল্যায়ন সম্পন্ন হয়েছে।"
+    })
+
+
+@require_POST
+def standalone_result_edit_ajax(request, result_id):
+    """
+    AJAX endpoint to edit Roll No and Exam Set for a StandaloneResult (offline).
+    """
+    res = get_object_or_404(StandaloneResult, id=result_id)
+    exam = res.exam
+    roll_no = request.POST.get('roll_no', '').strip()
+    new_set = request.POST.get('exam_set', '').strip().upper()
+
+    if roll_no:
+        res.roll_no = roll_no
+    if new_set in ['A', 'B', 'C', 'D']:
+        res.exam_set = new_set
+
+    ak = exam.get_answer_key(res.exam_set)
+    if ak:
+        score_res = calculate_score(
+            res.answers_json,
+            ak,
+            correct_mark=exam.correct_mark,
+            wrong_mark=exam.wrong_mark
+        )
+        res.marks = score_res['marks']
+        res.correct_count = score_res['correct']
+        res.wrong_count = score_res['wrong']
+        res.unattempted_count = score_res['unattempted']
+        res.error_message = None
+    else:
+        res.marks = 0.0
+        res.correct_count = 0
+        res.wrong_count = 0
+        res.unattempted_count = exam.total_questions
+        res.error_message = f"Set {res.exam_set}-এর কোনো Answer Key সংজ্ঞায়িত করা হয়নি!"
+
+    res.save()
+    exam.recalculate_ranks()
+    res.refresh_from_db()
+
+    return JsonResponse({
+        'success': True,
+        'id': res.id,
+        'roll_no': res.roll_no,
+        'exam_set': res.exam_set,
+        'marks': round(res.marks, 2),
+        'correct_count': res.correct_count,
+        'wrong_count': res.wrong_count,
+        'unattempted_count': res.unattempted_count,
+        'rank': res.rank,
+        'error_message': res.error_message,
+        'message': "রোল নম্বর ও সেট সফলভাবে সংরক্ষণ ও পুনর্মূল্যায়ন করা হয়েছে।"
+    })
+
+
 def institute_settings_view(request):
     """
     Settings page for institution branding on OMR report prints.
@@ -1136,5 +1323,280 @@ def standalone_result_delete(request, result_id):
     exam.recalculate_ranks()
     messages.success(request, 'শিক্ষার্থীর ওএমআর রেকর্ড মুছে ফেলা হয়েছে।')
     return redirect('dashboard:standalone_results', exam_id=exam.id)
+
+
+# ==============================================================================
+# USB / GSM MODEM OFFLINE SMS SYSTEM
+# ==============================================================================
+
+def modem_settings_view(request):
+    """
+    Settings page for USB GSM Modem configuration, COM port detection,
+    SMS template customization, and live test SMS sending.
+    """
+    settings_obj = ModemSettings.get_settings()
+    available_ports = list_com_ports()
+
+    if request.method == 'POST':
+        settings_obj.com_port = request.POST.get('com_port', '').strip()
+        settings_obj.baud_rate = int(request.POST.get('baud_rate', 115200))
+        settings_obj.delay_seconds = float(request.POST.get('delay_seconds', 2.5))
+        settings_obj.is_enabled = request.POST.get('is_enabled') == 'on'
+        settings_obj.sms_template = request.POST.get('sms_template', '').strip()
+        settings_obj.save()
+        messages.success(request, 'মডেম ও এসএমএস সেটিংস সফলভাবে সংরক্ষিত হয়েছে!')
+        return redirect('dashboard:modem_settings')
+
+    return render(request, 'dashboard/modem_settings.html', {
+        'settings': settings_obj,
+        'available_ports': available_ports
+    })
+
+
+@require_POST
+def modem_detect_ajax(request):
+    """AJAX endpoint to scan and return available COM ports."""
+    ports = list_com_ports()
+    return JsonResponse({'success': True, 'ports': ports})
+
+
+@require_POST
+def modem_test_ajax(request):
+    """AJAX endpoint to test modem AT communication and signal strength."""
+    port = request.POST.get('com_port', '').strip()
+    baud_rate = int(request.POST.get('baud_rate', 115200))
+    res = test_modem(port, baudrate=baud_rate)
+    return JsonResponse(res)
+
+
+@require_POST
+def modem_test_send_ajax(request):
+    """AJAX endpoint to send a single test SMS."""
+    settings_obj = ModemSettings.get_settings()
+    port = request.POST.get('com_port', '').strip() or settings_obj.com_port
+    baud_rate = int(request.POST.get('baud_rate', settings_obj.baud_rate))
+    recipient = request.POST.get('recipient', '').strip()
+    message = request.POST.get('message', '').strip()
+
+    if not port:
+        return JsonResponse({'success': False, 'error': 'COM পোর্ট নির্বাচন করুন'}, status=400)
+    if not recipient:
+        return JsonResponse({'success': False, 'error': 'প্রাপকের মোবাইল নম্বর লিখুন'}, status=400)
+    if not message:
+        return JsonResponse({'success': False, 'error': 'এসএমএস বার্তা লিখুন'}, status=400)
+
+    res = send_sms_via_modem(port, baud_rate, recipient, message)
+    return JsonResponse(res)
+
+
+def standalone_sms_preview_ajax(request, exam_id):
+    """
+    Returns preview data for sending SMS to an exam's students:
+    - Total students evaluated
+    - Count of students with valid mobile numbers (from OMR bubble or manual)
+    - Sample rendered SMS message for up to 3 students
+    """
+    exam = get_object_or_404(StandaloneExam, id=exam_id)
+    settings_obj = ModemSettings.get_settings()
+    institute = InstituteSettings.get_settings()
+
+    results = exam.results.all().order_by('rank', '-marks')
+    total_count = results.count()
+
+    valid_phone_count = 0
+    preview_samples = []
+
+    for r in results:
+        target_phone = r.phone_number or r.roll_no
+        norm = normalize_bd_phone(target_phone)
+        if norm['is_valid']:
+            valid_phone_count += 1
+            if len(preview_samples) < 3:
+                rendered_text = render_sms_template(settings_obj.sms_template, exam, r, institute)
+                preview_samples.append({
+                    'result_id': r.id,
+                    'roll_no': r.roll_no,
+                    'student_name': r.student_name or f"Roll: {r.roll_no}",
+                    'phone': norm['local'],
+                    'marks': round(r.marks, 2),
+                    'rank': r.rank,
+                    'sms_text': rendered_text
+                })
+
+    return JsonResponse({
+        'success': True,
+        'exam_title': exam.title,
+        'total_count': total_count,
+        'valid_phone_count': valid_phone_count,
+        'no_phone_count': total_count - valid_phone_count,
+        'com_port': settings_obj.com_port,
+        'is_enabled': settings_obj.is_enabled,
+        'preview_samples': preview_samples,
+        'sms_template': settings_obj.sms_template
+    })
+
+
+@require_POST
+def standalone_send_single_sms_ajax(request, exam_id, result_id):
+    """
+    Sends an SMS to a single student result using the configured GSM modem.
+    Called sequentially by the client-side progress worker.
+    """
+    exam = get_object_or_404(StandaloneExam, id=exam_id)
+    result = get_object_or_404(StandaloneResult, id=result_id, exam=exam)
+    settings_obj = ModemSettings.get_settings()
+    institute = InstituteSettings.get_settings()
+
+    if not settings_obj.com_port:
+        return JsonResponse({'success': False, 'error': 'মডেমের COM পোর্ট কনফিগার করা নেই। সেটিংস থেকে পোর্ট সিলেক্ট করুন।'}, status=400)
+
+    target_phone = result.phone_number or result.roll_no
+    norm = normalize_bd_phone(target_phone)
+    if not norm['is_valid']:
+        result.sms_status = 'failed'
+        result.sms_error = f"অকার্যকর মোবাইল নম্বর ({target_phone})"
+        result.save(update_fields=['sms_status', 'sms_error'])
+        return JsonResponse({
+            'success': False,
+            'result_id': result.id,
+            'roll_no': result.roll_no,
+            'phone': target_phone,
+            'error': result.sms_error
+        })
+
+    # Render SMS
+    rendered_text = render_sms_template(settings_obj.sms_template, exam, result, institute)
+
+    # Send via modem
+    res = send_sms_via_modem(
+        port=settings_obj.com_port,
+        baudrate=settings_obj.baud_rate,
+        recipient=norm['international'],
+        text=rendered_text
+    )
+
+    if res['success']:
+        result.phone_number = norm['local']
+        result.sms_status = 'sent'
+        result.sms_sent_at = timezone.now()
+        result.sms_error = None
+        result.save(update_fields=['phone_number', 'sms_status', 'sms_sent_at', 'sms_error'])
+        return JsonResponse({
+            'success': True,
+            'result_id': result.id,
+            'roll_no': result.roll_no,
+            'phone': norm['local'],
+            'message_id': res.get('message_id')
+        })
+    else:
+        result.phone_number = norm['local']
+        result.sms_status = 'failed'
+        result.sms_error = res.get('error')
+        result.save(update_fields=['phone_number', 'sms_status', 'sms_error'])
+        return JsonResponse({
+            'success': False,
+            'result_id': result.id,
+            'roll_no': result.roll_no,
+            'phone': norm['local'],
+            'error': res.get('error')
+        })
+
+
+@require_POST
+def standalone_import_contacts_ajax(request, exam_id):
+    """
+    (Optional) Import Student Names and/or Mobile Numbers from Excel/CSV.
+    Format: Columns containing Roll, Name, Phone / Mobile.
+    Updates matching StandaloneResult records by roll_no.
+    """
+    exam = get_object_or_404(StandaloneExam, id=exam_id)
+    if 'file' not in request.FILES:
+        return JsonResponse({'success': False, 'error': 'কোনো ফাইল নির্বাচন করা হয়নি।'}, status=400)
+
+    f = request.FILES['file']
+    filename = f.name.lower()
+    updated_count = 0
+
+    try:
+        import csv
+        import io
+
+        rows = []
+        if filename.endswith('.csv'):
+            decoded = f.read().decode('utf-8-sig', errors='ignore')
+            reader = csv.reader(io.StringIO(decoded))
+            rows = list(reader)
+        elif filename.endswith(('.xls', '.xlsx')):
+            try:
+                import openpyxl
+                wb = openpyxl.load_workbook(f, data_only=True)
+                sheet = wb.active
+                for r in sheet.iter_rows(values_only=True):
+                    rows.append([str(c or '').strip() for c in r])
+            except ImportError:
+                return JsonResponse({'success': False, 'error': 'Excel ফাইল পড়তে openpyxl প্রয়োজন। অনুগ্রহ করে .csv ফরম্যাটে আপলোড করুন।'}, status=400)
+
+        if not rows:
+            return JsonResponse({'success': False, 'error': 'ফাইলের ভেতর কোনো ডাটা পাওয়া যায়নি।'}, status=400)
+
+        header = [str(h).lower() for h in rows[0]]
+        roll_idx = -1
+        name_idx = -1
+        phone_idx = -1
+
+        for idx, col in enumerate(header):
+            if any(k in col for k in ['roll', 'রোল', 'id', 'student_id']):
+                roll_idx = idx
+            elif any(k in col for k in ['name', 'নাম', 'student_name']):
+                name_idx = idx
+            elif any(k in col for k in ['phone', 'mobile', 'ফোন', 'মোবাইল', 'contact']):
+                phone_idx = idx
+
+        if roll_idx == -1:
+            roll_idx = 0
+            if len(header) > 1:
+                name_idx = 1
+            if len(header) > 2:
+                phone_idx = 2
+            start_row = 0
+        else:
+            start_row = 1
+
+        for row in rows[start_row:]:
+            if not row or len(row) <= roll_idx:
+                continue
+            raw_roll = str(row[roll_idx]).strip()
+            if not raw_roll:
+                continue
+
+            res_matches = exam.results.filter(roll_no=raw_roll)
+            if not res_matches.exists():
+                digits_roll = re.sub(r'\D', '', raw_roll)
+                res_matches = exam.results.filter(roll_no=digits_roll)
+
+            for res in res_matches:
+                changed = False
+                if name_idx >= 0 and len(row) > name_idx and row[name_idx]:
+                    res.student_name = str(row[name_idx]).strip()
+                    changed = True
+                if phone_idx >= 0 and len(row) > phone_idx and row[phone_idx]:
+                    norm = normalize_bd_phone(row[phone_idx])
+                    if norm['is_valid']:
+                        res.phone_number = norm['local']
+                        changed = True
+                if changed:
+                    res.save()
+                    updated_count += 1
+
+        return JsonResponse({
+            'success': True,
+            'updated_count': updated_count,
+            'message': f"মোট {updated_count} জন শিক্ষার্থীর তথ্য আপডেট করা হয়েছে।"
+        })
+
+    except Exception as e:
+        logger.exception("Contact import error")
+        return JsonResponse({'success': False, 'error': f"ফাইল প্রসেসিং ব্যর্থ: {e}"}, status=500)
+
 
 

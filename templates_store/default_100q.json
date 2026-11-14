@@ -1,0 +1,67 @@
+{
+  "name": "Admission Challenge 100Q Template",
+  "version": "1.0",
+  "dimensions": {
+    "width": 794,
+    "height": 1123
+  },
+  "corner_markers": {
+    "min_area": 100,
+    "max_area": 10000,
+    "aspect_tolerance": 0.4
+  },
+  "id_grid": {
+    "x": 570,
+    "y": 70,
+    "w": 190,
+    "h": 293,
+    "columns": 6,
+    "rows": 10
+  },
+  "set_region": {
+    "x": 516,
+    "y": 70,
+    "w": 34,
+    "h": 129,
+    "rows": 4,
+    "columns": 1
+  },
+  "answer_columns": [
+    {
+      "column_index": 1,
+      "q_start": 1,
+      "q_end": 25,
+      "x": 78,
+      "y": 416,
+      "w": 128,
+      "h": 690
+    },
+    {
+      "column_index": 2,
+      "q_start": 26,
+      "q_end": 50,
+      "x": 264,
+      "y": 416,
+      "w": 128,
+      "h": 690
+    },
+    {
+      "column_index": 3,
+      "q_start": 51,
+      "q_end": 75,
+      "x": 448,
+      "y": 416,
+      "w": 128,
+      "h": 690
+    },
+    {
+      "column_index": 4,
+      "q_start": 76,
+      "q_end": 100,
+      "x": 633,
+      "y": 416,
+      "w": 128,
+      "h": 690
+    }
+  ]
+}

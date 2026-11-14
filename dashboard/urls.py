@@ -11,6 +11,7 @@ urlpatterns = [
     path('batch/<int:batch_id>/delete/', views.batch_delete, name='batch_delete'),
     path('result/<int:result_id>/edit/', views.manual_edit, name='manual_edit'),
     path('result/<int:result_id>/delete/', views.scan_result_delete, name='scan_result_delete'),
+    path('result/<int:result_id>/change-set-ajax/', views.scan_result_change_set_ajax, name='scan_result_change_set_ajax'),
 
     # Template Editor routes
     path('template-editor/', views.template_editor, name='template_editor'),
@@ -26,6 +27,12 @@ urlpatterns = [
     # Global Institution Settings (for print header/footer)
     path('settings/', views.institute_settings_view, name='institute_settings'),
 
+    # USB / GSM Modem Settings & Test Routes
+    path('settings/modem/', views.modem_settings_view, name='modem_settings'),
+    path('settings/modem/detect-ajax/', views.modem_detect_ajax, name='modem_detect_ajax'),
+    path('settings/modem/test-ajax/', views.modem_test_ajax, name='modem_test_ajax'),
+    path('settings/modem/test-send-ajax/', views.modem_test_send_ajax, name='modem_test_send_ajax'),
+
     # STANDALONE OFFLINE EXAM SYSTEM (NO API DEPENDENCY)
     path('standalone/', views.standalone_list, name='standalone_list'),
     path('standalone/create/', views.standalone_create, name='standalone_create'),
@@ -39,4 +46,10 @@ urlpatterns = [
     path('standalone/<int:exam_id>/delete/', views.standalone_delete, name='standalone_delete'),
     path('standalone/result/<int:result_id>/delete/', views.standalone_result_delete, name='standalone_result_delete'),
     path('standalone/result/<int:result_id>/detail-ajax/', views.standalone_result_detail_ajax, name='standalone_result_detail_ajax'),
+    path('standalone/result/<int:result_id>/change-set-ajax/', views.standalone_result_change_set_ajax, name='standalone_result_change_set_ajax'),
+    path('standalone/result/<int:result_id>/edit-ajax/', views.standalone_result_edit_ajax, name='standalone_result_edit_ajax'),
+    # Standalone SMS & Contact Routes
+    path('standalone/<int:exam_id>/sms-preview-ajax/', views.standalone_sms_preview_ajax, name='standalone_sms_preview_ajax'),
+    path('standalone/<int:exam_id>/send-single-sms-ajax/<int:result_id>/', views.standalone_send_single_sms_ajax, name='standalone_send_single_sms_ajax'),
+    path('standalone/<int:exam_id>/import-contacts-ajax/', views.standalone_import_contacts_ajax, name='standalone_import_contacts_ajax'),
 ]

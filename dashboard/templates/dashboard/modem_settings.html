@@ -1,0 +1,355 @@
+{% extends 'dashboard/base.html' %}
+
+{% block title %}ইউএসবি মডেম ও এসএমএস সেটিংস | OMR Engine{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+            <div>
+                <h3 class="fw-bold mb-0">
+                    <i class="fa fa-sms text-warning me-2"></i>ইউএসবি মডেম ও অফলাইন এসএমএস সেটিংস
+                </h3>
+                <p class="text-muted mb-0">কম্পিউটারে প্লাগ করা 3G/4G GSM মডেমের মাধ্যমে শিক্ষার্থীদের অফলাইন রেজাল্ট এসএমএস পাঠান</p>
+            </div>
+            <a href="{% url 'dashboard:standalone_list' %}" class="btn btn-outline-secondary">
+                <i class="fa fa-arrow-left me-1"></i> অফলাইন পরীক্ষা তালিকা
+            </a>
+        </div>
+
+        <div class="row g-4">
+            <!-- LEFT COLUMN: MODEM HARDWARE & COM PORT CONFIG -->
+            <div class="col-md-7">
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-header bg-white py-3">
+                        <h5 class="fw-bold mb-0 text-primary">
+                            <i class="fa fa-plug me-2"></i>১. মডেম হার্ডওয়্যার কনফিগারেশন
+                        </h5>
+                    </div>
+                    <div class="card-body p-4">
+                        <form method="post" id="modemSettingsForm">
+                            {% csrf_token %}
+
+                            <!-- COM PORT SELECTION -->
+                            <div class="mb-3">
+                                <label for="com_port" class="form-label fw-bold">
+                                    মডেম COM পোর্ট <span class="text-danger">*</span>
+                                </label>
+                                <div class="input-group">
+                                    <select class="form-select form-select-lg" id="com_port" name="com_port" required>
+                                        <option value="" {% if not settings.com_port %}selected{% endif %}>-- COM পোর্ট নির্বাচন করুন --</option>
+                                        {% for p in available_ports %}
+                                            <option value="{{ p.port }}" {% if settings.com_port == p.port %}selected{% endif %}>
+                                                {{ p.port }} — {{ p.description }}
+                                            </option>
+                                        {% endfor %}
+                                        {% if settings.com_port and settings.com_port not in available_ports %}
+                                            <option value="{{ settings.com_port }}" selected>{{ settings.com_port }} (সংরক্ষিত পোর্ট)</option>
+                                        {% endif %}
+                                    </select>
+                                    <button class="btn btn-outline-primary" type="button" onclick="detectPorts()" title="পোর্ট রিফ্রেশ করুন">
+                                        <i class="fa fa-sync-alt" id="refreshIcon"></i> রিফ্রেশ
+                                    </button>
+                                </div>
+                                <div class="form-text">
+                                    ইউএসবি মডেম প্লাগ করার পর <strong>রিফ্রেশ</strong> বাটনে চাপ দিন। সাধারণ মডেমের জন্য `COM3`, `COM4` ইত্যাদি পোর্ট থাকে।
+                                </div>
+                            </div>
+
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-6">
+                                    <label for="baud_rate" class="form-label fw-bold">Baud Rate (বড রেট)</label>
+                                    <select class="form-select" id="baud_rate" name="baud_rate">
+                                        <option value="115200" {% if settings.baud_rate == 115200 %}selected{% endif %}>115200 (Standard USB Modem)</option>
+                                        <option value="9600" {% if settings.baud_rate == 9600 %}selected{% endif %}>9600 (Slow / SIM800)</option>
+                                        <option value="57600" {% if settings.baud_rate == 57600 %}selected{% endif %}>57600</option>
+                                        <option value="38400" {% if settings.baud_rate == 38400 %}selected{% endif %}>38400</option>
+                                        <option value="19200" {% if settings.baud_rate == 19200 %}selected{% endif %}>19200</option>
+                                    </select>
+                                    <div class="form-text">ডিফল্ট: <code>115200</code> রাখুন।</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="delay_seconds" class="form-label fw-bold">এসএমএস বিরতি (Delay)</label>
+                                    <div class="input-group">
+                                        <input type="number" step="0.5" min="1.0" max="10.0" class="form-control" id="delay_seconds" name="delay_seconds" value="{{ settings.delay_seconds|default:2.5 }}">
+                                        <span class="input-group-text">সেকেন্ড</span>
+                                    </div>
+                                    <div class="form-text">মডেম বাফার জ্যাম এড়াতে প্রতিটি এসএমএসের মাঝে ২-৩ সেকেন্ড বিরতি নিরাপদ।</div>
+                                </div>
+                            </div>
+
+                            <div class="mb-4 form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="is_enabled" name="is_enabled" {% if settings.is_enabled %}checked{% endif %}>
+                                <label class="form-check-label fw-bold" for="is_enabled">
+                                    মডেম এসএমএস ইঞ্জিন সক্রিয় রাখুন
+                                </label>
+                            </div>
+
+                            <hr>
+
+                            <!-- SMS TEMPLATE SECTION -->
+                            <div class="mb-3">
+                                <label for="sms_template" class="form-label fw-bold">
+                                    <i class="fa fa-comment-alt text-primary me-1"></i> এসএমএস টেমপ্লেট ফরম্যাট
+                                </label>
+                                
+                                <div class="mb-2 d-flex flex-wrap gap-1">
+                                    <span class="small text-muted me-1 align-self-center">ক্লিক করে ট্যাগ যোগ করুন:</span>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="insertTag('[INSTITUTE_NAME]')">[INSTITUTE_NAME]</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="insertTag('[EXAM_TITLE]')">[EXAM_TITLE]</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="insertTag('[NAME]')">[NAME]</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="insertTag('[ROLL]')">[ROLL]</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="insertTag('[MARKS]')">[MARKS]</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="insertTag('[TOTAL_Q]')">[TOTAL_Q]</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="insertTag('[RANK]')">[RANK]</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="insertTag('[CORRECT]')">[CORRECT]</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="insertTag('[WRONG]')">[WRONG]</button>
+                                </div>
+
+                                <textarea class="form-control font-monospace" id="sms_template" name="sms_template" rows="5" required>{{ settings.sms_template }}</textarea>
+                                <div class="d-flex justify-content-between small text-muted mt-1">
+                                    <span>অক্ষর সংখ্যা: <strong id="charCount">0</strong></span>
+                                    <span>স্ট্যান্ডার্ড এসএমএস গণনা: <strong id="smsPartCount">1</strong> Part (160 chars)</span>
+                                </div>
+                            </div>
+
+                            <div class="d-flex justify-content-end">
+                                <button type="submit" class="btn btn-success fw-bold px-4">
+                                    <i class="fa fa-save me-1"></i> সেটিংস সংরক্ষণ করুন
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT COLUMN: MODEM HEALTH & TEST SMS -->
+            <div class="col-md-5">
+                <!-- MODEM DIAGNOSTIC CARD -->
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                        <h5 class="fw-bold mb-0 text-dark">
+                            <i class="fa fa-stethoscope text-info me-2"></i>মডেম কানেকশন টেস্ট
+                        </h5>
+                        <button type="button" class="btn btn-sm btn-outline-info fw-bold" onclick="testModemConnection()">
+                            <i class="fa fa-vial me-1"></i> টেস্ট করুন
+                        </button>
+                    </div>
+                    <div class="card-body p-3">
+                        <div id="modemTestStatus" class="alert alert-secondary py-2 small mb-0">
+                            পোর্ট নির্বাচন করে <strong>"টেস্ট করুন"</strong> বাটনে ক্লিক করুন।
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TEST SMS SENDING CARD -->
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-white py-3">
+                        <h5 class="fw-bold mb-0 text-success">
+                            <i class="fa fa-paper-plane me-2"></i>টেস্ট এসএমএস পাঠান
+                        </h5>
+                    </div>
+                    <div class="card-body p-4">
+                        <p class="small text-muted mb-3">
+                            মডেম দিয়ে আপনার ব্যক্তিগত নম্বরে একটি পরীক্ষামূলক এসএমএস পাঠিয়ে নিশ্চিত হন।
+                        </p>
+                        
+                        <div class="mb-3">
+                            <label for="test_recipient" class="form-label fw-bold small">প্রাপকের মোবাইল নম্বর</label>
+                            <input type="text" class="form-control" id="test_recipient" placeholder="যেমন: 01700000000">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="test_message" class="form-label fw-bold small">টেস্ট বার্তা</label>
+                            <textarea class="form-control" id="test_message" rows="3">OMR Engine Test SMS: Modem connection is working successfully!</textarea>
+                        </div>
+
+                        <div id="testSendAlert" class="alert alert-info py-2 small d-none mb-3"></div>
+
+                        <button type="button" class="btn btn-primary w-100 fw-bold" id="sendTestSmsBtn" onclick="sendTestSms()">
+                            <i class="fa fa-paper-plane me-1"></i> টেস্ট এসএমএস পাঠান
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// 1. Insert Dynamic Tag into Textarea
+function insertTag(tag) {
+    const textarea = document.getElementById('sms_template');
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    textarea.value = text.substring(0, start) + tag + text.substring(end);
+    textarea.selectionStart = textarea.selectionEnd = start + tag.length;
+    textarea.focus();
+    updateCharCounter();
+}
+
+// 2. Character & SMS parts counter
+function updateCharCounter() {
+    const text = document.getElementById('sms_template').value;
+    const len = text.length;
+    document.getElementById('charCount').innerText = len;
+    const parts = len <= 160 ? 1 : Math.ceil(len / 153);
+    document.getElementById('smsPartCount').innerText = parts;
+}
+document.getElementById('sms_template').addEventListener('input', updateCharCounter);
+updateCharCounter();
+
+// 3. Detect COM Ports via AJAX
+async function detectPorts() {
+    const icon = document.getElementById('refreshIcon');
+    icon.classList.add('fa-spin');
+    
+    try {
+        const resp = await fetch("{% url 'dashboard:modem_detect_ajax' %}", {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        });
+        const data = await resp.json();
+        if (data.success) {
+            const select = document.getElementById('com_port');
+            const currentVal = select.value;
+            select.innerHTML = '<option value="">-- COM পোর্ট নির্বাচন করুন --</option>';
+            data.ports.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.port;
+                opt.text = `${p.port} — ${p.description}`;
+                if (p.port === currentVal) opt.selected = true;
+                select.appendChild(opt);
+            });
+            if (data.ports.length === 0) {
+                alert('কোনো COM পোর্ট সনাক্ত হয়নি। মডেম সঠিকভাবে প্লাগ করা আছে কিনা যাচাই করুন।');
+            }
+        }
+    } catch (e) {
+        alert('পোর্ট স্ক্যান করতে ব্যর্থ: ' + e.message);
+    } finally {
+        icon.classList.remove('fa-spin');
+    }
+}
+
+// 4. Test Modem Connection
+async function testModemConnection() {
+    const port = document.getElementById('com_port').value;
+    const baudRate = document.getElementById('baud_rate').value;
+    const statusBox = document.getElementById('modemTestStatus');
+
+    if (!port) {
+        alert('অনুগ্রহ করে প্রথমে COM পোর্ট নির্বাচন করুন।');
+        return;
+    }
+
+    statusBox.className = 'alert alert-info py-2 small mb-0';
+    statusBox.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> মডেম সংযোগ পরীক্ষা করা হচ্ছে...';
+
+    const formData = new FormData();
+    formData.append('com_port', port);
+    formData.append('baud_rate', baudRate);
+
+    try {
+        const resp = await fetch("{% url 'dashboard:modem_test_ajax' %}", {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: formData
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+            statusBox.className = 'alert alert-success py-2 small mb-0';
+            statusBox.innerHTML = `
+                <div><i class="fa fa-check-circle me-1"></i> <strong>মডেম সংযুক্ত ও সক্রিয়!</strong></div>
+                <div>পোর্ট: <code>${data.port}</code></div>
+                <div>মডেল: <strong>${data.model || 'Generic GSM'}</strong></div>
+                <div>সিগন্যাল: <span class="badge bg-primary">${data.signal_dbm}</span></div>
+            `;
+        } else {
+            statusBox.className = 'alert alert-danger py-2 small mb-0';
+            statusBox.innerHTML = `<i class="fa fa-exclamation-triangle me-1"></i> ত্রুটি: ${data.error || 'মডেমের সাথে সংযোগ স্থাপন করা যায়নি।'}`;
+        }
+    } catch (e) {
+        statusBox.className = 'alert alert-danger py-2 small mb-0';
+        statusBox.innerHTML = `<i class="fa fa-exclamation-triangle me-1"></i> রিকোয়েস্ট ব্যর্থ: ${e.message}`;
+    }
+}
+
+// 5. Send Test SMS
+async function sendTestSms() {
+    const port = document.getElementById('com_port').value;
+    const baudRate = document.getElementById('baud_rate').value;
+    const recipient = document.getElementById('test_recipient').value.trim();
+    const message = document.getElementById('test_message').value.trim();
+    const alertBox = document.getElementById('testSendAlert');
+    const btn = document.getElementById('sendTestSmsBtn');
+
+    if (!port) {
+        alert('অনুগ্রহ করে প্রথমে COM পোর্ট নির্বাচন করুন।');
+        return;
+    }
+    if (!recipient) {
+        alert('প্রাপকের মোবাইল নম্বর লিখুন।');
+        return;
+    }
+    if (!message) {
+        alert('বার্তা লিখুন।');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> এসএমএস পাঠানো হচ্ছে...';
+    alertBox.classList.remove('d-none');
+    alertBox.className = 'alert alert-info py-2 small mb-3';
+    alertBox.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> মডেমের মাধ্যমে এসএমএস ডেলিভারি করা হচ্ছে... অনুগ্রহ করে ১০-১৫ সেকেন্ড অপেক্ষা করুন।';
+
+    const formData = new FormData();
+    formData.append('com_port', port);
+    formData.append('baud_rate', baudRate);
+    formData.append('recipient', recipient);
+    formData.append('message', message);
+
+    try {
+        const resp = await fetch("{% url 'dashboard:modem_test_send_ajax' %}", {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: formData
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+            alertBox.className = 'alert alert-success py-2 small mb-3';
+            alertBox.innerHTML = `<i class="fa fa-check-circle me-1"></i> <strong>সফল!</strong> এসএমএস সফলভাবে প্রেরিত হয়েছে। (Message ID: ${data.message_id || 'OK'})`;
+        } else {
+            alertBox.className = 'alert alert-danger py-2 small mb-3';
+            alertBox.innerHTML = `<i class="fa fa-times-circle me-1"></i> <strong>ব্যর্থ:</strong> ${data.error || 'এসএমএস পাঠানো সম্ভব হয়নি।'}`;
+        }
+    } catch (e) {
+        alertBox.className = 'alert alert-danger py-2 small mb-3';
+        alertBox.innerHTML = `<i class="fa fa-times-circle me-1"></i> সার্ভার ত্রুটি: ${e.message}`;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-paper-plane me-1"></i> টেস্ট এসএমএস পাঠান';
+    }
+}
+</script>
+{% endblock %}

@@ -145,6 +145,15 @@ class StandaloneResult(models.Model):
     wrong_count = models.IntegerField(default=0)
     unattempted_count = models.IntegerField(default=0)
     rank = models.IntegerField(default=0)
+    student_name = models.CharField(max_length=150, blank=True, default='', help_text="শিক্ষার্থীর নাম (ঐচ্ছিক)")
+    phone_number = models.CharField(max_length=30, blank=True, default='', help_text="মোবাইল নম্বর (ওএমআর বাবল বা এক্সেল থেকে)")
+    sms_status = models.CharField(max_length=20, default='none', choices=[
+        ('none', 'Not Sent'),
+        ('sent', 'Sent'),
+        ('failed', 'Failed')
+    ])
+    sms_sent_at = models.DateTimeField(null=True, blank=True)
+    sms_error = models.TextField(blank=True, null=True)
     error_message = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(default=timezone.now)
 
@@ -179,4 +188,27 @@ class InstituteSettings(models.Model):
 
     def __str__(self):
         return self.institute_name
+
+
+class ModemSettings(models.Model):
+    """
+    Settings for USB GSM Modem (Port, Baud rate, Delay, SMS Template).
+    """
+    com_port = models.CharField(max_length=50, blank=True, default='', help_text="মডেমের COM পোর্ট যেমন: COM3, COM4")
+    baud_rate = models.IntegerField(default=115200, help_text="Baud Rate (ডিফল্ট: 115200 বা 9600)")
+    delay_seconds = models.FloatField(default=2.5, help_text="প্রতিটি এসএমএস পাঠানোর মধ্যবর্তী বিরতি (সেকেন্ড)")
+    is_enabled = models.BooleanField(default=True, help_text="মডেম এসএমএস সক্রিয় আছে কিনা")
+    sms_template = models.TextField(
+        default="[INSTITUTE_NAME]\nExam: [EXAM_TITLE]\nMob/Roll: [ROLL]\nScore: [MARKS]/[TOTAL_Q] (Rank: [RANK])\nCorrect: [CORRECT], Wrong: [WRONG]",
+        help_text="এসএমএস টেমপ্লেট"
+    )
+
+    @classmethod
+    def get_settings(cls):
+        obj, created = cls.objects.get_or_create(id=1)
+        return obj
+
+    def __str__(self):
+        return f"Modem: {self.com_port or 'Unset'} ({self.baud_rate})"
+
 

@@ -15,6 +15,12 @@
         <p class="text-muted mb-0">তারিখ: {{ exam.exam_date|date:"d M Y" }} | মোট প্রশ্ন: {{ exam.total_questions }}টি | সঠিক: +{{ exam.correct_mark }} | ভুল: {{ exam.wrong_mark }} <span class="badge bg-light text-dark border ms-2"><i class="fa fa-file-code text-primary me-1"></i>{{ exam.template_name }}</span></p>
     </div>
     <div class="d-flex gap-2 flex-wrap">
+        <button type="button" class="btn btn-warning fw-bold text-dark" onclick="openSmsModal()">
+            <i class="fa fa-sms me-1"></i> মডেম দিয়ে এসএমএস পাঠান
+        </button>
+        <button type="button" class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#importContactsModal" title="ঐচ্ছিক এক্সেল বা সিএসভি ফাইল থেকে নাম বা মোবাইল নম্বর যোগ করুন">
+            <i class="fa fa-file-excel me-1"></i> (ঐচ্ছিক) নাম/ফোন ইমপোর্ট
+        </button>
         <a href="{% url 'dashboard:standalone_upload' exam.id %}" class="btn btn-primary">
             <i class="fa fa-cloud-upload-alt me-1"></i> আরও শিট আপলোড
         </a>
@@ -94,20 +100,21 @@
                 <thead class="table-light">
                     <tr>
                         <th class="ps-4" style="width: 80px;">মেরিট</th>
-                        <th>রোল নম্বর (Roll No)</th>
+                        <th>মোবাইল নম্বর / রোল</th>
                         <th>সেট</th>
                         <th>সঠিক (+)</th>
                         <th>ভুল (-)</th>
                         <th>ছেড়েছে</th>
                         <th>মোট প্রাপ্ত নম্বর</th>
+                        <th>এসএমএস স্ট্যাটাস</th>
                         <th>ফাইলের নাম</th>
                         <th class="text-end pe-4">অ্যাকশন</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for r in results %}
-                    <tr>
-                        <td class="ps-4">
+                    <tr id="row-standalone-{{ r.id }}">
+                        <td class="ps-4" id="standalone-rank-{{ r.id }}">
                             {% if r.rank == 1 %}
                                 <span class="badge bg-warning text-dark fs-6"><i class="fa fa-trophy"></i> ১</span>
                             {% elif r.rank == 2 %}
@@ -118,19 +125,52 @@
                                 <span class="fw-bold text-muted">#{{ r.rank }}</span>
                             {% endif %}
                         </td>
-                        <td>
+                        <td id="standalone-roll-{{ r.id }}">
                             <strong class="font-monospace fs-5 text-primary">{{ r.roll_no }}</strong>
+                            {% if r.student_name %}
+                                <div class="small text-muted">{{ r.student_name }}</div>
+                            {% endif %}
                         </td>
                         <td>
-                            <span class="badge bg-primary fs-6">{{ r.exam_set }}</span>
+                            <!-- Interactive Set Dropdown for Instant Set Correction -->
+                            <div class="dropdown d-inline-block">
+                                <button class="btn btn-sm btn-outline-primary dropdown-toggle fw-bold py-0 px-2" 
+                                        type="button" 
+                                        data-bs-toggle="dropdown" 
+                                        id="standalone-set-btn-{{ r.id }}"
+                                        title="সেট ভুল হলে এখান থেকে পরিবর্তন ও পুনর্মূল্যায়ন করুন">
+                                    Set {{ r.exam_set }}
+                                </button>
+                                <ul class="dropdown-menu shadow">
+                                    <li><h6 class="dropdown-header small text-muted">সেট সংশোধন ও পুনর্মূল্যায়ন:</h6></li>
+                                    {% for s in "ABCD" %}
+                                    <li>
+                                        <a class="dropdown-item {% if r.exam_set == s %}active fw-bold{% endif %}" 
+                                           href="javascript:void(0)" 
+                                           onclick="changeStandaloneSet({{ r.id }}, '{{ s }}')">
+                                            <i class="fa fa-check me-1 {% if r.exam_set != s %}invisible{% endif %}"></i> Set {{ s }}
+                                        </a>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
                         </td>
-                        <td><span class="text-success fw-bold">+{{ r.correct_count }}</span></td>
-                        <td><span class="text-danger fw-bold">-{{ r.wrong_count }}</span></td>
-                        <td><span class="text-muted">{{ r.unattempted_count }}</span></td>
+                        <td><span class="text-success fw-bold" id="standalone-correct-{{ r.id }}">+{{ r.correct_count }}</span></td>
+                        <td><span class="text-danger fw-bold" id="standalone-wrong-{{ r.id }}">-{{ r.wrong_count }}</span></td>
+                        <td><span class="text-muted" id="standalone-unattempted-{{ r.id }}">{{ r.unattempted_count }}</span></td>
                         <td>
-                            <h5 class="mb-0 fw-bold {% if r.marks > 0 %}text-success{% else %}text-danger{% endif %}">
+                            <h5 class="mb-0 fw-bold {% if r.marks > 0 %}text-success{% else %}text-danger{% endif %}" id="standalone-marks-{{ r.id }}">
                                 {{ r.marks|floatformat:2 }}
                             </h5>
+                        </td>
+                        <td id="standalone-sms-{{ r.id }}">
+                            {% if r.sms_status == 'sent' %}
+                                <span class="badge bg-success" title="{{ r.sms_sent_at|date:'d M, h:i A' }}"><i class="fa fa-check me-1"></i>প্রেরিত</span>
+                            {% elif r.sms_status == 'failed' %}
+                                <span class="badge bg-danger" title="{{ r.sms_error }}"><i class="fa fa-exclamation-circle me-1"></i>ব্যর্থ</span>
+                            {% else %}
+                                <span class="badge bg-light text-dark border">পেন্ডিং</span>
+                            {% endif %}
                         </td>
                         <td>
                             <span class="small text-muted text-truncate d-inline-block" style="max-width: 180px;" title="{{ r.original_filename }}">
@@ -139,8 +179,11 @@
                         </td>
                         <td class="text-end pe-4">
                             <div class="btn-group btn-group-sm">
-                                <button type="button" class="btn btn-outline-primary" onclick="loadStudentAnswers({{ r.id }})">
+                                <button type="button" class="btn btn-outline-primary" onclick="loadStudentAnswers({{ r.id }})" title="বিস্তারিত উত্তরপত্র দেখুন ও সেট কারেকশন করুন">
                                     <i class="fa fa-eye me-1"></i> উত্তরপত্র
+                                </button>
+                                <button type="button" class="btn btn-outline-warning" onclick="openStandaloneEditModal({{ r.id }}, '{{ r.roll_no }}', '{{ r.exam_set }}')" title="রোল নম্বর ও সেট পরিবর্তন করুন">
+                                    <i class="fa fa-edit"></i>
                                 </button>
                                 <form method="post" action="{% url 'dashboard:standalone_result_delete' r.id %}" class="d-inline" onsubmit="return confirm('এই রেকর্ডটি মুছে ফেলতে চান?');">
                                     {% csrf_token %}
@@ -177,13 +220,33 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-4">
-                <!-- Top Summary Stats -->
-                <div class="d-flex justify-content-between align-items-center p-3 bg-light rounded mb-3 flex-wrap gap-2">
-                    <div id="modalMetaInfo"></div>
-                    <div class="d-flex gap-2">
-                        <span class="badge bg-success fs-6" id="badgeCorrect">সঠিক: 0</span>
-                        <span class="badge bg-danger fs-6" id="badgeWrong">ভুল: 0</span>
-                        <span class="badge bg-secondary fs-6" id="badgeUnattempted">ছেড়েছে: 0</span>
+                <!-- Top Summary Stats & Set Correction -->
+                <div class="p-3 bg-light rounded mb-3">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                        <div id="modalMetaInfo"></div>
+                        <div class="d-flex gap-2">
+                            <span class="badge bg-success fs-6" id="badgeCorrect">সঠিক: 0</span>
+                            <span class="badge bg-danger fs-6" id="badgeWrong">ভুল: 0</span>
+                            <span class="badge bg-secondary fs-6" id="badgeUnattempted">ছেড়েছে: 0</span>
+                        </div>
+                    </div>
+                    <!-- Live Set Correction Control -->
+                    <div class="d-flex align-items-center justify-content-between border-top pt-2 flex-wrap gap-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="fw-bold small text-dark"><i class="fa fa-wrench text-warning me-1"></i> সেট ভুল হলে পরিবর্তন করুন:</span>
+                            <div class="input-group input-group-sm" style="width: auto;">
+                                <select class="form-select form-select-sm fw-bold text-primary" id="modalSetSelect" style="width: 100px;">
+                                    <option value="A">Set A</option>
+                                    <option value="B">Set B</option>
+                                    <option value="C">Set C</option>
+                                    <option value="D">Set D</option>
+                                </select>
+                                <button class="btn btn-warning btn-sm fw-bold" type="button" id="modalChangeSetBtn" onclick="applyModalSetChange()">
+                                    <i class="fa fa-sync-alt me-1"></i> সেট পরিবর্তন ও রি-স্কোর
+                                </button>
+                            </div>
+                        </div>
+                        <div id="modalSetStatusMsg" class="small text-muted"></div>
                     </div>
                 </div>
 
@@ -212,13 +275,243 @@
         </div>
     </div>
 </div>
+
+<!-- MODAL: QUICK EDIT ROLL & SET -->
+<div class="modal fade" id="standaloneEditModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold"><i class="fa fa-edit text-warning me-2"></i>রোল ও সেট সংশোধন</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editResultId">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">রোল নম্বর (Roll No):</label>
+                    <input type="text" class="form-control form-control-lg font-monospace" id="editRollNo" required>
+                    <div class="form-text">শিট থেকে রোল নম্বর ভুল শনাক্ত হলে সঠিক রোল লিখুন।</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">প্রশ্ন সেট (Exam Set):</label>
+                    <select class="form-select form-select-lg" id="editExamSet">
+                        <option value="A">Set A</option>
+                        <option value="B">Set B</option>
+                        <option value="C">Set C</option>
+                        <option value="D">Set D</option>
+                    </select>
+                </div>
+                <div class="alert alert-info small mb-0">
+                    <i class="fa fa-info-circle me-1"></i> সেট পরিবর্তন করলে সেই সেটের Answer Key অনুযায়ী নম্বর ও মেধা ক্রম (Rank) স্বয়ংক্রিয়ভাবে পুনর্মূল্যায়ন হবে।
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">বাতিল</button>
+                <button type="button" class="btn btn-primary" id="saveQuickEditBtn" onclick="saveStandaloneQuickEdit()">
+                    <i class="fa fa-save me-1"></i> সংরক্ষণ করুন
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: OFFLINE SMS VIA MODEM -->
+<div class="modal fade" id="smsModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-warning bg-opacity-10">
+                <h5 class="modal-title fw-bold"><i class="fa fa-sms text-warning me-2"></i>ইউএসবি মডেম দিয়ে অফলাইন এসএমএস প্রেরণ</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" id="smsModalCloseBtn"></button>
+            </div>
+            <div class="modal-body p-4">
+                <!-- Loading State -->
+                <div id="smsModalLoading" class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <div class="small text-muted mt-2">মডেম ও ফলাফল যাচাই করা হচ্ছে...</div>
+                </div>
+
+                <!-- Main Content State -->
+                <div id="smsModalContent" class="d-none">
+                    <!-- Modem Status Banner -->
+                    <div id="smsModemAlert" class="alert d-flex align-items-center justify-content-between p-3 mb-3">
+                        <div class="d-flex align-items-center">
+                            <i id="smsModemIcon" class="fa fa-signal fa-2x me-3"></i>
+                            <div>
+                                <h6 class="fw-bold mb-0" id="smsModemTitle">মডেম প্রস্তুত</h6>
+                                <div class="small" id="smsModemSubtitle">COM3 পোর্টে সংযুক্ত</div>
+                            </div>
+                        </div>
+                        <a href="{% url 'dashboard:modem_settings' %}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                            <i class="fa fa-cog me-1"></i> সেটিংস
+                        </a>
+                    </div>
+
+                    <!-- Statistics Summary -->
+                    <div class="row g-2 mb-3 text-center">
+                        <div class="col-3">
+                            <div class="border rounded p-2 bg-light">
+                                <div class="small text-muted">মোট পরীক্ষার্থী</div>
+                                <h4 class="fw-bold mb-0" id="smsTotalCount">0</h4>
+                            </div>
+                        </div>
+                        <div class="col-3">
+                            <div class="border rounded p-2 bg-success bg-opacity-10 border-success">
+                                <div class="small text-success fw-bold">মোবাইল নম্বর শনাক্ত</div>
+                                <h4 class="fw-bold text-success mb-0" id="smsReadyCount">0</h4>
+                            </div>
+                        </div>
+                        <div class="col-3">
+                            <div class="border rounded p-2 bg-danger bg-opacity-10 border-danger">
+                                <div class="small text-danger fw-bold">নম্বর অনুপস্থিত</div>
+                                <h4 class="fw-bold text-danger mb-0" id="smsMissingCount">0</h4>
+                            </div>
+                        </div>
+                        <div class="col-3">
+                            <div class="border rounded p-2 bg-primary bg-opacity-10 border-primary">
+                                <div class="small text-primary fw-bold">পূর্বেই প্রেরিত</div>
+                                <h4 class="fw-bold text-primary mb-0" id="smsSentCount">0</h4>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Filter Option -->
+                    <div class="card p-3 mb-3 bg-light border-0">
+                        <label class="fw-bold small text-muted mb-2">প্রেরণ ফিল্টার নির্বাচন করুন:</label>
+                        <div class="d-flex gap-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="smsFilterOption" id="smsFilterPending" value="pending" checked>
+                                <label class="form-check-label fw-bold" for="smsFilterPending">
+                                    শুধুমাত্র পেন্ডিং ও ব্যর্থ নম্বরে পাঠান <span class="badge bg-primary ms-1" id="badgePendingFiltered">0</span>
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="smsFilterOption" id="smsFilterAll" value="all">
+                                <label class="form-check-label" for="smsFilterAll">
+                                    সকল শনাক্ত নম্বরে আবার পাঠান <span class="badge bg-secondary ms-1" id="badgeAllFiltered">0</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sample SMS Preview -->
+                    <div class="card border mb-3">
+                        <div class="card-header bg-light py-2 small fw-bold d-flex justify-content-between align-items-center">
+                            <span><i class="fa fa-eye me-1 text-primary"></i> নমুনা এসএমএস বার্তা প্রিভিউ (প্রথম শিক্ষার্থীর তথ্যানুসারে)</span>
+                            <span class="badge bg-dark font-monospace" id="smsSamplePhone">01XXXXXXXXX</span>
+                        </div>
+                        <div class="card-body p-3 bg-white">
+                            <pre id="smsSampleText" class="mb-0 text-wrap font-monospace small text-dark" style="white-space: pre-wrap; font-family: inherit;">নমুনা লোড হচ্ছে...</pre>
+                        </div>
+                    </div>
+
+                    <!-- Progress Section (Shown during/after sending) -->
+                    <div id="smsProgressSection" class="d-none">
+                        <div class="d-flex justify-content-between align-items-center mb-1 small fw-bold">
+                            <span id="smsProgressStatus">প্রেরণ শুরু হচ্ছে...</span>
+                            <span id="smsProgressPercent">0%</span>
+                        </div>
+                        <div class="progress mb-3" style="height: 22px;">
+                            <div id="smsProgressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-warning text-dark fw-bold" style="width: 0%">0%</div>
+                        </div>
+
+                        <!-- Live Counters -->
+                        <div class="d-flex justify-content-around small mb-3 text-center">
+                            <div><span class="text-success fw-bold"><i class="fa fa-check-circle"></i> সফল:</span> <strong id="liveSentCount">0</strong></div>
+                            <div><span class="text-danger fw-bold"><i class="fa fa-times-circle"></i> ব্যর্থ:</span> <strong id="liveFailedCount">0</strong></div>
+                            <div><span class="text-muted fw-bold"><i class="fa fa-hourglass-half"></i> অবশিষ্ট:</span> <strong id="liveRemainingCount">0</strong></div>
+                        </div>
+
+                        <!-- Live Terminal / Log -->
+                        <div class="bg-dark text-light rounded p-2 font-monospace small" style="height: 140px; overflow-y: auto;" id="smsLiveLog">
+                            <div class="text-secondary">[লগ প্রস্তুত]</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-between">
+                <a href="{% url 'dashboard:modem_settings' %}" target="_blank" class="btn btn-outline-secondary">
+                    <i class="fa fa-cog me-1"></i> মডেম সেটিংস ও টেমপ্লেট
+                </a>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="btnSmsClose">বন্ধ করুন</button>
+                    <button type="button" class="btn btn-danger d-none" id="btnStopSms" onclick="stopBatchSms()">
+                        <i class="fa fa-stop me-1"></i> থামান
+                    </button>
+                    <button type="button" class="btn btn-warning fw-bold text-dark" id="btnStartSms" onclick="startBatchSms()">
+                        <i class="fa fa-paper-plane me-1"></i> এসএমএস পাঠানো শুরু করুন
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: OPTIONAL CONTACTS IMPORT (EXCEL / CSV) -->
+<div class="modal fade" id="importContactsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info bg-opacity-10">
+                <h5 class="modal-title fw-bold"><i class="fa fa-file-excel text-info me-2"></i>(ঐচ্ছিক) নাম ও মোবাইল নম্বর ইমপোর্ট</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="alert alert-primary small mb-3">
+                    <i class="fa fa-info-circle me-1"></i>
+                    <strong>গুরুত্বপূর্ণ:</strong> ওএমআর শিটের রোল/আইডি ঘরে শিক্ষার্থী যদি নিজের মোবাইল নম্বর (১০ বা ১১ ডিজিট) বাবল পূরণ করে থাকে, তবে <strong>কোনো ফাইল আপলোড করার প্রয়োজন নেই</strong>। ইঞ্জিন স্বয়ংক্রিয়ভাবে শিট থেকেই নম্বর পেয়ে যায়।
+                </div>
+                <p class="small text-muted mb-3">
+                    যদি শিক্ষার্থীদের নাম বা নির্দিষ্ট ফোন নম্বর আলাদাভাবে রোল নম্বরের বিপরীতে যুক্ত করতে চান, তবে একটি Excel (.xlsx, .xls) অথবা CSV (.csv) ফাইল আপলোড করতে পারেন।
+                </p>
+
+                <div class="card p-3 bg-light border-0 mb-3 small">
+                    <div class="fw-bold mb-1 text-dark">ফাইলের প্রয়োজনীয় কলাম ফরম্যাট:</div>
+                    <ul class="mb-0 ps-3 text-secondary">
+                        <li><code>roll</code> (বা <code>id</code>) — ওএমআর শিটের রোলের সাথে মিলতে হবে</li>
+                        <li><code>name</code> (বা <code>student_name</code>) — শিক্ষার্থীর পূর্ণ নাম</li>
+                        <li><code>phone</code> (বা <code>mobile</code>) — মোবাইল নম্বর (যেমন: 01712345678)</li>
+                    </ul>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold">ফাইল নির্বাচন করুন (.csv, .xlsx, .xls):</label>
+                    <input type="file" id="contactsFileInput" accept=".csv, .xlsx, .xls" class="form-control form-control-lg">
+                </div>
+
+                <div id="importContactsStatus" class="d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">বাতিল</button>
+                <button type="button" class="btn btn-info fw-bold text-dark" id="btnSubmitContactsImport" onclick="submitContactsImport()">
+                    <i class="fa fa-upload me-1"></i> আপলোড ও সিঙ্ক করুন
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
 let answersModalInstance = null;
+let editModalInstance = null;
+let currentModalResultId = null;
 
 async function loadStudentAnswers(resultId) {
+    currentModalResultId = resultId;
     if (!answersModalInstance) {
         answersModalInstance = new bootstrap.Modal(document.getElementById('answersModal'));
     }
@@ -228,6 +521,7 @@ async function loadStudentAnswers(resultId) {
     document.getElementById('modalAnswersGrid').classList.add('d-none');
     document.getElementById('modalAnswersGrid').innerHTML = '';
     document.getElementById('modalImageLink').innerHTML = '';
+    document.getElementById('modalSetStatusMsg').innerHTML = '';
     answersModalInstance.show();
 
     try {
@@ -244,9 +538,13 @@ async function loadStudentAnswers(resultId) {
 
         document.getElementById('modalMetaInfo').innerHTML = `
             <strong>রোল: <span class="text-primary font-monospace fs-5">${data.roll_no}</span></strong>
-            <span class="badge bg-primary ms-2">Set ${data.exam_set}</span>
-            <span class="ms-2">নম্বর: <strong class="fs-5 ${data.marks > 0 ? 'text-success' : 'text-danger'}">${data.marks}</strong></span>
+            <span class="badge bg-primary ms-2" id="modalCurrentSetBadge">Set ${data.exam_set}</span>
+            <span class="ms-2">নম্বর: <strong class="fs-5 ${data.marks > 0 ? 'text-success' : 'text-danger'}" id="modalMarksText">${data.marks}</strong></span>
+            <span class="ms-2 text-muted">মেধা ক্রম: <strong id="modalRankText">#${data.rank}</strong></span>
         `;
+
+        // Pre-select current set in the set correction select dropdown
+        document.getElementById('modalSetSelect').value = data.exam_set;
 
         document.getElementById('badgeCorrect').innerText = `সঠিক: ${data.correct_count}`;
         document.getElementById('badgeWrong').innerText = `ভুল: ${data.wrong_count}`;
@@ -265,17 +563,13 @@ async function loadStudentAnswers(resultId) {
 
         data.breakdown.forEach(item => {
             const card = document.createElement('div');
-            let badgeClass = 'bg-light text-muted border';
             let contentHtml = '';
 
             if (item.status === 'correct') {
-                badgeClass = 'bg-success text-white';
                 contentHtml = `<strong class="text-success"><i class="fa fa-check"></i> ${item.student_ans}</strong>`;
             } else if (item.status === 'wrong') {
-                badgeClass = 'bg-danger text-white';
                 contentHtml = `<strong class="text-danger"><i class="fa fa-times"></i> ${item.student_ans}</strong> <small class="text-muted">(সঠিক: <strong>${item.correct_ans}</strong>)</small>`;
             } else {
-                badgeClass = 'bg-light text-muted border';
                 contentHtml = `<span class="text-muted">—</span> <small class="text-muted">(সঠিক: ${item.correct_ans || '?'})</small>`;
             }
 
@@ -295,6 +589,447 @@ async function loadStudentAnswers(resultId) {
     } catch (err) {
         console.error(err);
         alert('সার্ভার থেকে উত্তরপত্র লোড করতে ত্রুটি হয়েছে।');
+    }
+}
+
+// Set correction from inside the answer review modal
+async function applyModalSetChange() {
+    if (!currentModalResultId) return;
+    const newSet = document.getElementById('modalSetSelect').value;
+    const changeBtn = document.getElementById('modalChangeSetBtn');
+    const statusMsg = document.getElementById('modalSetStatusMsg');
+
+    changeBtn.disabled = true;
+    changeBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>প্রসেস হচ্ছে...`;
+    statusMsg.innerHTML = '';
+
+    try {
+        const formData = new FormData();
+        formData.append('exam_set', newSet);
+
+        const resp = await fetch(`/dashboard/standalone/result/${currentModalResultId}/change-set-ajax/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: formData
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+            statusMsg.innerHTML = `<span class="text-success fw-bold"><i class="fa fa-check-circle me-1"></i>${data.message}</span>`;
+            // Update row in main table
+            updateStandaloneRow(data);
+            // Re-load the student answers breakdown in modal to reflect new answer key
+            await loadStudentAnswers(currentModalResultId);
+        } else {
+            statusMsg.innerHTML = `<span class="text-danger fw-bold"><i class="fa fa-exclamation-triangle me-1"></i>${data.error || 'সেট পরিবর্তন ব্যর্থ হয়েছে'}</span>`;
+        }
+    } catch (err) {
+        console.error(err);
+        statusMsg.innerHTML = `<span class="text-danger">সার্ভার এরর হয়েছে।</span>`;
+    } finally {
+        changeBtn.disabled = false;
+        changeBtn.innerHTML = `<i class="fa fa-sync-alt me-1"></i> সেট পরিবর্তন ও রি-স্কোর`;
+    }
+}
+
+// Quick Set Correction directly from results table dropdown
+async function changeStandaloneSet(resultId, newSet) {
+    const btn = document.getElementById(`standalone-set-btn-${resultId}`);
+    if (!btn) return;
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status"></span>`;
+    btn.disabled = true;
+
+    try {
+        const formData = new FormData();
+        formData.append('exam_set', newSet);
+
+        const resp = await fetch(`/dashboard/standalone/result/${resultId}/change-set-ajax/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: formData
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+            updateStandaloneRow(data);
+        } else {
+            btn.innerHTML = originalHtml;
+            alert(data.error || 'সেট পরিবর্তন করতে ব্যর্থ হয়েছে।');
+        }
+    } catch (err) {
+        console.error(err);
+        btn.innerHTML = originalHtml;
+        alert('সার্ভারের সাথে যোগাযোগ করতে ব্যর্থ হয়েছে।');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function updateStandaloneRow(data) {
+    const btn = document.getElementById(`standalone-set-btn-${data.id}`);
+    if (btn) {
+        btn.innerHTML = `Set ${data.exam_set}`;
+    }
+
+    const marksEl = document.getElementById(`standalone-marks-${data.id}`);
+    if (marksEl) {
+        marksEl.innerText = Number(data.marks).toFixed(2);
+        marksEl.className = `mb-0 fw-bold ${data.marks > 0 ? 'text-success' : 'text-danger'}`;
+    }
+
+    const correctEl = document.getElementById(`standalone-correct-${data.id}`);
+    if (correctEl) correctEl.innerText = `+${data.correct_count}`;
+
+    const wrongEl = document.getElementById(`standalone-wrong-${data.id}`);
+    if (wrongEl) wrongEl.innerText = `-${data.wrong_count}`;
+
+    const unattemptedEl = document.getElementById(`standalone-unattempted-${data.id}`);
+    if (unattemptedEl) unattemptedEl.innerText = data.unattempted_count;
+
+    const rankEl = document.getElementById(`standalone-rank-${data.id}`);
+    if (rankEl && data.rank) {
+        if (data.rank === 1) {
+            rankEl.innerHTML = `<span class="badge bg-warning text-dark fs-6"><i class="fa fa-trophy"></i> ১</span>`;
+        } else if (data.rank === 2) {
+            rankEl.innerHTML = `<span class="badge bg-secondary fs-6">২</span>`;
+        } else if (data.rank === 3) {
+            rankEl.innerHTML = `<span class="badge bg-dark fs-6">৩</span>`;
+        } else {
+            rankEl.innerHTML = `<span class="fw-bold text-muted">#${data.rank}</span>`;
+        }
+    }
+
+    const row = document.getElementById(`row-standalone-${data.id}`);
+    if (row) {
+        row.classList.add('table-success');
+        setTimeout(() => row.classList.remove('table-success'), 1200);
+    }
+}
+
+// Standalone Quick Edit Modal (Roll & Set)
+function openStandaloneEditModal(resultId, rollNo, examSet) {
+    document.getElementById('editResultId').value = resultId;
+    document.getElementById('editRollNo').value = rollNo;
+    document.getElementById('editExamSet').value = examSet || 'A';
+
+    if (!editModalInstance) {
+        editModalInstance = new bootstrap.Modal(document.getElementById('standaloneEditModal'));
+    }
+    editModalInstance.show();
+}
+
+async function saveStandaloneQuickEdit() {
+    const resultId = document.getElementById('editResultId').value;
+    const rollNo = document.getElementById('editRollNo').value.trim();
+    const examSet = document.getElementById('editExamSet').value;
+    const saveBtn = document.getElementById('saveQuickEditBtn');
+
+    if (!rollNo) {
+        alert('রোল নম্বর লিখুন।');
+        return;
+    }
+
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>সংরক্ষণ হচ্ছে...`;
+
+    try {
+        const formData = new FormData();
+        formData.append('roll_no', rollNo);
+        formData.append('exam_set', examSet);
+
+        const resp = await fetch(`/dashboard/standalone/result/${resultId}/edit-ajax/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: formData
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+            // Update roll in row
+            const rollEl = document.getElementById(`standalone-roll-${data.id}`);
+            if (rollEl) {
+                rollEl.innerHTML = `<strong class="font-monospace fs-5 text-primary">${data.roll_no}</strong>`;
+            }
+            updateStandaloneRow(data);
+            editModalInstance.hide();
+        } else {
+            alert(data.error || 'সংশোধন ব্যর্থ হয়েছে।');
+        }
+    } catch (err) {
+        console.error(err);
+        alert('সার্ভার এরর হয়েছে।');
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = `<i class="fa fa-save me-1"></i> সংরক্ষণ করুন`;
+    }
+}
+
+// ==========================================
+// OFFLINE SMS VIA MODEM JAVASCRIPT LOGIC
+// ==========================================
+let smsModalInstance = null;
+let contactsModalInstance = null;
+let smsStudentsQueue = [];
+let isSmsSending = false;
+const currentExamId = {{ exam.id }};
+
+async function openSmsModal() {
+    if (!smsModalInstance) {
+        smsModalInstance = new bootstrap.Modal(document.getElementById('smsModal'));
+    }
+    smsModalInstance.show();
+
+    // Reset UI to loading
+    document.getElementById('smsModalLoading').classList.remove('d-none');
+    document.getElementById('smsModalContent').classList.add('d-none');
+    document.getElementById('smsProgressSection').classList.add('d-none');
+    document.getElementById('btnStartSms').classList.remove('d-none');
+    document.getElementById('btnStopSms').classList.add('d-none');
+    document.getElementById('btnStartSms').disabled = true;
+
+    try {
+        const resp = await fetch(`/dashboard/standalone/exam/${currentExamId}/sms-preview-ajax/`);
+        const data = await resp.json();
+
+        if (!data.success) {
+            alert(data.error || 'এসএমএস তথ্য লোড করতে ব্যর্থ হয়েছে।');
+            smsModalInstance.hide();
+            return;
+        }
+
+        smsStudentsQueue = data.students || [];
+
+        // Update counts
+        document.getElementById('smsTotalCount').innerText = data.total_students;
+        document.getElementById('smsReadyCount').innerText = data.ready_count;
+        document.getElementById('smsMissingCount').innerText = data.missing_count;
+        document.getElementById('smsSentCount').innerText = data.sent_count;
+
+        const pendingOrFailedCount = data.pending_count + data.failed_count;
+        document.getElementById('badgePendingFiltered').innerText = pendingOrFailedCount;
+        document.getElementById('badgeAllFiltered').innerText = data.ready_count;
+
+        // Modem status alert
+        const alertBox = document.getElementById('smsModemAlert');
+        const alertIcon = document.getElementById('smsModemIcon');
+        const alertTitle = document.getElementById('smsModemTitle');
+        const alertSub = document.getElementById('smsModemSubtitle');
+
+        if (data.modem_configured) {
+            alertBox.className = 'alert alert-success d-flex align-items-center justify-content-between p-3 mb-3';
+            alertIcon.className = 'fa fa-signal fa-2x text-success me-3';
+            alertTitle.innerText = 'মডেম সংযুক্ত ও প্রস্তুত';
+            alertSub.innerText = `পোর্ট: ${data.port} | সিগন্যাল সক্রিয়`;
+            document.getElementById('btnStartSms').disabled = (data.ready_count === 0);
+        } else {
+            alertBox.className = 'alert alert-warning d-flex align-items-center justify-content-between p-3 mb-3';
+            alertIcon.className = 'fa fa-exclamation-triangle fa-2x text-warning me-3';
+            alertTitle.innerText = 'মডেম কনফিগার করা হয়নি';
+            alertSub.innerText = 'অনুগ্রহ করে "সেটিংস" থেকে আপনার ইউএসবি মডেম বা ডঙ্গল পোর্ট নির্বাচন করুন।';
+            document.getElementById('btnStartSms').disabled = true;
+        }
+
+        // Preview sample
+        if (data.preview_sample && data.preview_sample.phone) {
+            document.getElementById('smsSamplePhone').innerText = data.preview_sample.phone;
+            document.getElementById('smsSampleText').innerText = data.preview_sample.text;
+        } else {
+            document.getElementById('smsSamplePhone').innerText = 'নম্বর পাওয়া যায়নি';
+            document.getElementById('smsSampleText').innerText = 'ওএমআর শিটের রোলের ঘরে মোবাইল নম্বর বাবল করা থাকলে স্বয়ংক্রিয়ভাবে প্রিভিউ দেখা যাবে।';
+        }
+
+        document.getElementById('smsModalLoading').classList.add('d-none');
+        document.getElementById('smsModalContent').classList.remove('d-none');
+
+    } catch (err) {
+        console.error(err);
+        alert('মডেম তথ্য যাচাইয়ের সময় সার্ভার এরর হয়েছে।');
+        smsModalInstance.hide();
+    }
+}
+
+function appendSmsLog(html) {
+    const logBox = document.getElementById('smsLiveLog');
+    if (!logBox) return;
+    const entry = document.createElement('div');
+    entry.className = 'mb-1';
+    entry.innerHTML = html;
+    logBox.appendChild(entry);
+    logBox.scrollTop = logBox.scrollHeight;
+}
+
+function updateMainTableRowSmsStatus(resultId, status, tooltip) {
+    const td = document.getElementById(`standalone-sms-${resultId}`);
+    if (!td) return;
+    if (status === 'sent') {
+        td.innerHTML = `<span class="badge bg-success" title="${tooltip || 'প্রেরিত'}"><i class="fa fa-check me-1"></i>প্রেরিত</span>`;
+    } else if (status === 'failed') {
+        td.innerHTML = `<span class="badge bg-danger" title="${tooltip || 'ব্যর্থ'}"><i class="fa fa-exclamation-circle me-1"></i>ব্যর্থ</span>`;
+    }
+}
+
+async function startBatchSms() {
+    const filterOption = document.querySelector('input[name="smsFilterOption"]:checked').value;
+
+    let targetStudents = [];
+    if (filterOption === 'pending') {
+        targetStudents = smsStudentsQueue.filter(s => s.phone && s.status !== 'sent');
+    } else {
+        targetStudents = smsStudentsQueue.filter(s => s.phone);
+    }
+
+    if (targetStudents.length === 0) {
+        alert('প্রেরণ করার মতো কোনো উপযুক্ত মোবাইল নম্বর পাওয়া যায়নি। ওএমআর শিটের রোলের ঘরে মোবাইল নম্বর বাবল করা আছে কিনা নিশ্চিত করুন।');
+        return;
+    }
+
+    if (!confirm(`মোট ${targetStudents.length} জন শিক্ষার্থীর মোবাইলে সরাসরি মডেম দিয়ে অফলাইন এসএমএস পাঠানো শুরু করতে চান?`)) {
+        return;
+    }
+
+    isSmsSending = true;
+
+    // UI state
+    document.getElementById('btnStartSms').classList.add('d-none');
+    document.getElementById('btnStopSms').classList.remove('d-none');
+    document.getElementById('btnSmsClose').disabled = true;
+    document.getElementById('smsModalCloseBtn').disabled = true;
+    document.getElementById('smsProgressSection').classList.remove('d-none');
+
+    // Filter radios disable
+    document.getElementById('smsFilterPending').disabled = true;
+    document.getElementById('smsFilterAll').disabled = true;
+
+    // Reset log and counters
+    const logBox = document.getElementById('smsLiveLog');
+    logBox.innerHTML = '';
+    appendSmsLog(`<span class="text-info">[${new Date().toLocaleTimeString()}] ব্যাচ এসএমএস প্রেরণ শুরু... মোট লক্ষ্য: ${targetStudents.length}</span>`);
+
+    let sentCount = 0;
+    let failedCount = 0;
+    const totalToProcess = targetStudents.length;
+
+    document.getElementById('liveSentCount').innerText = '0';
+    document.getElementById('liveFailedCount').innerText = '0';
+    document.getElementById('liveRemainingCount').innerText = totalToProcess;
+    document.getElementById('smsProgressBar').style.width = '0%';
+    document.getElementById('smsProgressBar').innerText = '0%';
+
+    for (let i = 0; i < targetStudents.length; i++) {
+        if (!isSmsSending) {
+            appendSmsLog(`<span class="text-warning">[${new Date().toLocaleTimeString()}] প্রেরণ স্থগিত করা হয়েছে।</span>`);
+            break;
+        }
+
+        const student = targetStudents[i];
+        const currentIdx = i + 1;
+        document.getElementById('smsProgressStatus').innerText = `প্রেরণ করা হচ্ছে (${currentIdx}/${totalToProcess}): ${student.phone} (রোল ${student.roll})...`;
+
+        try {
+            const resp = await fetch(`/dashboard/standalone/result/${student.id}/send-sms-ajax/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCookie('csrftoken') }
+            });
+            const data = await resp.json();
+
+            const timeStr = new Date().toLocaleTimeString();
+            if (data.success && data.status === 'sent') {
+                sentCount++;
+                student.status = 'sent';
+                appendSmsLog(`<span class="text-success">[${timeStr}] <i class="fa fa-check"></i> রোল ${student.roll} (${student.phone}): সফল</span>`);
+                updateMainTableRowSmsStatus(student.id, 'sent', data.sent_at);
+            } else {
+                failedCount++;
+                student.status = 'failed';
+                appendSmsLog(`<span class="text-danger">[${timeStr}] <i class="fa fa-times"></i> রোল ${student.roll} (${student.phone}): ব্যর্থ (${data.error || 'Unknown'})</span>`);
+                updateMainTableRowSmsStatus(student.id, 'failed', data.error);
+            }
+        } catch (err) {
+            failedCount++;
+            student.status = 'failed';
+            appendSmsLog(`<span class="text-danger">[${new Date().toLocaleTimeString()}] <i class="fa fa-times"></i> রোল ${student.roll}: নেটওয়ার্ক/সার্ভার ত্রুটি</span>`);
+            updateMainTableRowSmsStatus(student.id, 'failed', 'সার্ভার যোগাযোগ ত্রুটি');
+        }
+
+        const remaining = totalToProcess - (sentCount + failedCount);
+        const percent = Math.round(((sentCount + failedCount) / totalToProcess) * 100);
+
+        document.getElementById('liveSentCount').innerText = sentCount;
+        document.getElementById('liveFailedCount').innerText = failedCount;
+        document.getElementById('liveRemainingCount').innerText = remaining;
+        document.getElementById('smsProgressBar').style.width = percent + '%';
+        document.getElementById('smsProgressBar').innerText = percent + '%';
+        document.getElementById('smsProgressPercent').innerText = percent + '%';
+    }
+
+    // Done
+    isSmsSending = false;
+    document.getElementById('btnStartSms').classList.remove('d-none');
+    document.getElementById('btnStopSms').classList.add('d-none');
+    document.getElementById('btnSmsClose').disabled = false;
+    document.getElementById('smsModalCloseBtn').disabled = false;
+    document.getElementById('smsFilterPending').disabled = false;
+    document.getElementById('smsFilterAll').disabled = false;
+
+    document.getElementById('smsProgressStatus').innerText = `প্রেরণ সম্পন্ন হয়েছে! (সফল: ${sentCount}, ব্যর্থ: ${failedCount})`;
+    appendSmsLog(`<span class="text-info fw-bold">[${new Date().toLocaleTimeString()}] সমাপ্ত: ${sentCount}টি সফল, ${failedCount}টি ব্যর্থ।</span>`);
+}
+
+function stopBatchSms() {
+    if (confirm('আপনি কি এসএমএস প্রেরণ প্রক্রিয়া বন্ধ করতে চান?')) {
+        isSmsSending = false;
+        document.getElementById('smsProgressStatus').innerText = 'স্থগিত করা হচ্ছে...';
+    }
+}
+
+// Contacts import logic
+async function submitContactsImport() {
+    const fileInput = document.getElementById('contactsFileInput');
+    const statusDiv = document.getElementById('importContactsStatus');
+    const submitBtn = document.getElementById('btnSubmitContactsImport');
+
+    if (!fileInput.files || fileInput.files.length === 0) {
+        alert('অনুগ্রহ করে একটি Excel বা CSV ফাইল নির্বাচন করুন।');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('contacts_file', fileInput.files[0]);
+
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>ইমপোর্ট হচ্ছে...`;
+    statusDiv.classList.add('d-none');
+
+    try {
+        const resp = await fetch(`/dashboard/standalone/exam/${currentExamId}/import-contacts-ajax/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: formData
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+            statusDiv.className = 'alert alert-success mt-3 mb-0 small';
+            statusDiv.innerHTML = `<i class="fa fa-check-circle me-1"></i>${data.message}`;
+            statusDiv.classList.remove('d-none');
+            setTimeout(() => {
+                location.reload();
+            }, 1200);
+        } else {
+            statusDiv.className = 'alert alert-danger mt-3 mb-0 small';
+            statusDiv.innerHTML = `<i class="fa fa-exclamation-triangle me-1"></i>${data.error || 'ইমপোর্ট ব্যর্থ হয়েছে'}`;
+            statusDiv.classList.remove('d-none');
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = `<i class="fa fa-upload me-1"></i> আপলোড ও সিঙ্ক করুন`;
+        }
+    } catch (err) {
+        console.error(err);
+        statusDiv.className = 'alert alert-danger mt-3 mb-0 small';
+        statusDiv.innerHTML = `<i class="fa fa-times-circle me-1"></i>সার্ভার এরর হয়েছে।`;
+        statusDiv.classList.remove('d-none');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<i class="fa fa-upload me-1"></i> আপলোড ও সিঙ্ক করুন`;
     }
 }
 </script>

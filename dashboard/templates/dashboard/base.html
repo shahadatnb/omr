@@ -69,8 +69,14 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{% url 'dashboard:template_editor' %}"><i class="fa fa-sliders-h text-warning me-1"></i> টেমপ্লেট এডিটর</a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'dashboard:institute_settings' %}"><i class="fa fa-cog text-secondary me-1"></i> সেটিংস</a>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="fa fa-cog text-secondary me-1"></i> সেটিংস
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-dark">
+                            <li><a class="dropdown-item" href="{% url 'dashboard:institute_settings' %}"><i class="fa fa-university text-info me-2"></i> প্রতিষ্ঠানের তথ্য ও প্রিন্ট</a></li>
+                            <li><a class="dropdown-item" href="{% url 'dashboard:modem_settings' %}"><i class="fa fa-sms text-warning me-2"></i> ইউএসবি মডেম ও এসএমএস</a></li>
+                        </ul>
                     </li>
                 </ul>
                 <div class="d-flex text-light align-items-center">

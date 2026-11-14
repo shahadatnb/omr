@@ -125,7 +125,7 @@
                 </thead>
                 <tbody>
                     {% for item in results %}
-                    <tr class="{% if not item.is_matched %}table-warning{% endif %}">
+                    <tr id="row-online-{{ item.id }}" class="{% if not item.is_matched %}table-warning{% endif %}">
                         <td class="ps-3">
                             <span class="text-truncate d-inline-block" style="max-width: 220px;" title="{{ item.original_filename }}">
                                 <i class="fa fa-file-image text-primary me-1"></i> {{ item.original_filename }}
@@ -139,11 +139,28 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if item.exam_set %}
-                                <span class="badge bg-primary fs-6">{{ item.exam_set }}</span>
-                            {% else %}
-                                <span class="badge bg-secondary">N/A</span>
-                            {% endif %}
+                            <!-- Interactive Set Dropdown for Instant Set Correction -->
+                            <div class="dropdown d-inline-block">
+                                <button class="btn btn-sm btn-outline-primary dropdown-toggle fw-bold py-0 px-2" 
+                                        type="button" 
+                                        data-bs-toggle="dropdown" 
+                                        id="online-set-btn-{{ item.id }}"
+                                        title="সেট ভুল হলে এখান থেকে পরিবর্তন ও পুনঃমূল্যায়ন করুন">
+                                    {% if item.exam_set %}Set {{ item.exam_set }}{% else %}<span class="text-danger">N/A</span>{% endif %}
+                                </button>
+                                <ul class="dropdown-menu shadow">
+                                    <li><h6 class="dropdown-header small text-muted">সেট সংশোধন ও পুনর্মূল্যায়ন:</h6></li>
+                                    {% for s in "ABCD" %}
+                                    <li>
+                                        <a class="dropdown-item {% if item.exam_set == s %}active fw-bold{% endif %}" 
+                                           href="javascript:void(0)" 
+                                           onclick="changeOnlineSet({{ item.id }}, '{{ s }}')">
+                                            <i class="fa fa-check me-1 {% if item.exam_set != s %}invisible{% endif %}"></i> Set {{ s }}
+                                        </a>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
                         </td>
                         <td>
                             {% if item.is_matched %}
@@ -157,16 +174,16 @@
                             {% endif %}
                         </td>
                         <td>
-                            <span class="text-success fw-bold">+{{ item.correct_count }}</span> / 
-                            <span class="text-danger fw-bold">-{{ item.wrong_count }}</span>
-                            <div class="small text-muted">ছেড়েছে: {{ item.unattempted_count }}</div>
+                            <span class="text-success fw-bold" id="online-correct-{{ item.id }}">+{{ item.correct_count }}</span> / 
+                            <span class="text-danger fw-bold" id="online-wrong-{{ item.id }}">-{{ item.wrong_count }}</span>
+                            <div class="small text-muted">ছেড়েছে: <span id="online-unattempted-{{ item.id }}">{{ item.unattempted_count }}</span></div>
                         </td>
                         <td>
-                            <h5 class="mb-0 fw-bold {% if item.marks > 0 %}text-success{% else %}text-muted{% endif %}">
+                            <h5 class="mb-0 fw-bold {% if item.marks > 0 %}text-success{% else %}text-muted{% endif %}" id="online-marks-{{ item.id }}">
                                 {{ item.marks|floatformat:2 }}
                             </h5>
                         </td>
-                        <td>
+                        <td id="online-status-{{ item.id }}">
                             {% if item.status == 'matched' %}
                                 <span class="badge badge-matched"><i class="fa fa-check me-1"></i> ম্যাচড</span>
                             {% elif item.status == 'manual' %}
@@ -382,6 +399,66 @@ async function startModalAppendProcess() {
 
     document.getElementById('modalProgressStatus').innerHTML = '<i class="fa fa-check-circle text-success me-1"></i>সকল ফাইল সফলভাবে যুক্ত ও মূল্যায়িত হয়েছে!';
     document.getElementById('modalDoneBtn').classList.remove('d-none');
+}
+
+// Instant Online Exam Set Correction & Rescoring
+async function changeOnlineSet(resultId, newSet) {
+    const btn = document.getElementById(`online-set-btn-${resultId}`);
+    if (!btn) return;
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status"></span>`;
+    btn.disabled = true;
+
+    try {
+        const formData = new FormData();
+        formData.append('exam_set', newSet);
+
+        const resp = await fetch(`/dashboard/result/${resultId}/change-set-ajax/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: formData
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+            btn.innerHTML = `Set ${data.exam_set}`;
+            btn.className = 'btn btn-sm btn-outline-primary dropdown-toggle fw-bold py-0 px-2';
+
+            // Update row cells
+            const marksEl = document.getElementById(`online-marks-${resultId}`);
+            if (marksEl) {
+                marksEl.innerText = Number(data.marks).toFixed(2);
+                marksEl.className = `mb-0 fw-bold ${data.marks > 0 ? 'text-success' : 'text-danger'}`;
+            }
+            const correctEl = document.getElementById(`online-correct-${resultId}`);
+            if (correctEl) correctEl.innerText = `+${data.correct_count}`;
+            const wrongEl = document.getElementById(`online-wrong-${resultId}`);
+            if (wrongEl) wrongEl.innerText = `-${data.wrong_count}`;
+            const unattemptedEl = document.getElementById(`online-unattempted-${resultId}`);
+            if (unattemptedEl) unattemptedEl.innerText = data.unattempted_count;
+
+            const statusEl = document.getElementById(`online-status-${resultId}`);
+            if (statusEl && data.status === 'manual') {
+                statusEl.innerHTML = `<span class="badge badge-manual"><i class="fa fa-user-edit me-1"></i> ম্যানুয়াল এডিট</span>`;
+            }
+
+            // Highlight animation for visual confirmation
+            const row = document.getElementById(`row-online-${resultId}`);
+            if (row) {
+                row.classList.add('table-success');
+                setTimeout(() => row.classList.remove('table-success'), 1200);
+            }
+        } else {
+            btn.innerHTML = originalHtml;
+            alert(data.error || 'সেট পরিবর্তন করতে ব্যর্থ হয়েছে।');
+        }
+    } catch (err) {
+        console.error(err);
+        btn.innerHTML = originalHtml;
+        alert('সার্ভারের সাথে যোগাযোগ করতে ব্যর্থ হয়েছে।');
+    } finally {
+        btn.disabled = false;
+    }
 }
 </script>
 {% endblock %}
