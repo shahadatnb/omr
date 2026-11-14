@@ -26,6 +26,24 @@ logger = logging.getLogger(__name__)
 # In-memory answer key cache to minimize redundant Laravel calls per set
 _ANSWER_KEY_CACHE = {}
 _STUDENT_ROSTER_CACHE = {}
+_TEMPLATE_DATA_CACHE = {}
+
+
+def _get_template_data(template_path):
+    """Loads and caches template JSON configuration."""
+    if not template_path:
+        return {}
+    p = str(template_path)
+    if p in _TEMPLATE_DATA_CACHE:
+        return _TEMPLATE_DATA_CACHE[p]
+    try:
+        with open(p, 'r', encoding='utf-8') as fp:
+            data = json.load(fp)
+            _TEMPLATE_DATA_CACHE[p] = data
+            return data
+    except Exception as e:
+        logger.warning(f"Failed to read template JSON {p}: {e}")
+        return {}
 
 
 def _get_cached_answer_key(client, class_test_id, exam_set):
@@ -131,13 +149,16 @@ def process_single_scan_helper(scan, fpath, batch, client=None, template_path=No
             if scan.exam_set:
                 ak = _get_cached_answer_key(client, batch.class_test_id, scan.exam_set)
                 if ak:
+                    tpl_data = _get_template_data(template_path)
                     score_res = calculate_score(
                         scan.answers_json,
                         ak['answers'],
                         correct_mark=ak.get('correct_mark', 1.0),
-                        wrong_mark=ak.get('wrong_mark', -0.25)
+                        wrong_mark=ak.get('wrong_mark', -0.25),
+                        subjects=tpl_data.get('subjects')
                     )
                     scan.marks = score_res['marks']
+                    scan.subject_marks = score_res.get('subject_marks')
                     scan.correct_count = score_res['correct']
                     scan.wrong_count = score_res['wrong']
                     scan.unattempted_count = score_res['unattempted']
@@ -410,10 +431,15 @@ def batch_detail(request, batch_id):
     elif filter_type == 'unmatched':
         results = results.filter(is_matched=False)
 
+    tpl_path = get_template_path(batch.template_name)
+    tpl_data = _get_template_data(tpl_path)
+    subjects = tpl_data.get('subjects', [])
+
     return render(request, 'dashboard/batch_detail.html', {
         'batch': batch,
         'results': results,
         'filter_type': filter_type,
+        'subjects': subjects,
     })
 
 
@@ -481,13 +507,17 @@ def manual_edit(request, result_id):
         try:
             ak = _get_cached_answer_key(client, batch.class_test_id, exam_set)
             if ak and 'answers' in ak:
+                tpl_path = get_template_path(batch.template_name)
+                tpl_data = _get_template_data(tpl_path)
                 score_res = calculate_score(
                     result.answers_json,
                     ak['answers'],
                     correct_mark=ak.get('correct_mark', 1.0),
-                    wrong_mark=ak.get('wrong_mark', -0.25)
+                    wrong_mark=ak.get('wrong_mark', -0.25),
+                    subjects=tpl_data.get('subjects')
                 )
                 result.marks = score_res['marks']
+                result.subject_marks = score_res.get('subject_marks')
                 result.correct_count = score_res['correct']
                 result.wrong_count = score_res['wrong']
                 result.unattempted_count = score_res['unattempted']
@@ -531,13 +561,17 @@ def scan_result_change_set_ajax(request, result_id):
     client = LaravelOmrClient(base_url=settings.LARAVEL_API_URL)
     ak = _get_cached_answer_key(client, batch.class_test_id, new_set)
     if ak and 'answers' in ak:
+        tpl_path = get_template_path(batch.template_name)
+        tpl_data = _get_template_data(tpl_path)
         score_res = calculate_score(
             result.answers_json,
             ak['answers'],
             correct_mark=ak.get('correct_mark', 1.0),
-            wrong_mark=ak.get('wrong_mark', -0.25)
+            wrong_mark=ak.get('wrong_mark', -0.25),
+            subjects=tpl_data.get('subjects')
         )
         result.marks = score_res['marks']
+        result.subject_marks = score_res.get('subject_marks')
         result.correct_count = score_res['correct']
         result.wrong_count = score_res['wrong']
         result.unattempted_count = score_res['unattempted']
@@ -575,13 +609,16 @@ def sync_to_laravel(request, batch_id):
 
     payload = []
     for r in matched_results:
-        payload.append({
+        item_data = {
             'item_id': r.item_id,
             'marks': r.marks,
             'correct_answer': r.correct_count,
             'wrong_answer': r.wrong_count,
             'is_absend': 0,
-        })
+        }
+        if r.subject_marks:
+            item_data['subject_marks'] = r.subject_marks
+        payload.append(item_data)
 
     client = LaravelOmrClient(base_url=settings.LARAVEL_API_URL)
     try:
@@ -901,6 +938,8 @@ def standalone_answer_key(request, exam_id):
 
         # Recalculate existing results if any
         recalc_count = 0
+        tpl_path = get_template_path(exam.template_name)
+        tpl_data = _get_template_data(tpl_path)
         for res in exam.results.filter(exam_set=set_name):
             ak = exam.get_answer_key(res.exam_set)
             if ak:
@@ -908,9 +947,11 @@ def standalone_answer_key(request, exam_id):
                     res.answers_json,
                     ak,
                     correct_mark=exam.correct_mark,
-                    wrong_mark=exam.wrong_mark
+                    wrong_mark=exam.wrong_mark,
+                    subjects=tpl_data.get('subjects')
                 )
                 res.marks = score_res['marks']
+                res.subject_marks = score_res.get('subject_marks')
                 res.correct_count = score_res['correct']
                 res.wrong_count = score_res['wrong']
                 res.unattempted_count = score_res['unattempted']
@@ -1067,13 +1108,16 @@ def standalone_upload_single_ajax(request, exam_id):
 
             ak = exam.get_answer_key(res_obj.exam_set)
             if ak:
+                tpl_data = _get_template_data(template_path)
                 score_res = calculate_score(
                     res_obj.answers_json,
                     ak,
                     correct_mark=exam.correct_mark,
-                    wrong_mark=exam.wrong_mark
+                    wrong_mark=exam.wrong_mark,
+                    subjects=tpl_data.get('subjects')
                 )
                 res_obj.marks = score_res['marks']
+                res_obj.subject_marks = score_res.get('subject_marks')
                 res_obj.correct_count = score_res['correct']
                 res_obj.wrong_count = score_res['wrong']
                 res_obj.unattempted_count = score_res['unattempted']
@@ -1145,6 +1189,10 @@ def standalone_results(request, exam_id):
     if total > 0:
         avg_marks = sum(r.marks for r in exam.results.all()) / total
 
+    tpl_path = get_template_path(exam.template_name)
+    tpl_data = _get_template_data(tpl_path)
+    subjects = tpl_data.get('subjects', [])
+
     return render(request, 'dashboard/standalone/results.html', {
         'exam': exam,
         'results': results,
@@ -1153,6 +1201,7 @@ def standalone_results(request, exam_id):
         'total_count': total,
         'highest_marks': round(highest.marks, 2) if highest else 0,
         'avg_marks': round(avg_marks, 2),
+        'subjects': subjects,
     })
 
 
@@ -1171,6 +1220,10 @@ def standalone_print(request, exam_id):
     highest = results.first()
     avg_marks = (sum(r.marks for r in results) / total) if total > 0 else 0
 
+    tpl_path = get_template_path(exam.template_name)
+    tpl_data = _get_template_data(tpl_path)
+    subjects = tpl_data.get('subjects', [])
+
     return render(request, 'dashboard/standalone/print_sheet.html', {
         'exam': exam,
         'results': results,
@@ -1179,6 +1232,7 @@ def standalone_print(request, exam_id):
         'highest_marks': round(highest.marks, 2) if highest else 0,
         'avg_marks': round(avg_marks, 2),
         'print_time': timezone.now(),
+        'subjects': subjects,
     })
 
 
@@ -1260,13 +1314,17 @@ def standalone_result_change_set_ajax(request, result_id):
     # Recalculate score with local answer key
     ak = exam.get_answer_key(new_set)
     if ak:
+        tpl_path = get_template_path(exam.template_name)
+        tpl_data = _get_template_data(tpl_path)
         score_res = calculate_score(
             res.answers_json,
             ak,
             correct_mark=exam.correct_mark,
-            wrong_mark=exam.wrong_mark
+            wrong_mark=exam.wrong_mark,
+            subjects=tpl_data.get('subjects')
         )
         res.marks = score_res['marks']
+        res.subject_marks = score_res.get('subject_marks')
         res.correct_count = score_res['correct']
         res.wrong_count = score_res['wrong']
         res.unattempted_count = score_res['unattempted']
@@ -1314,13 +1372,17 @@ def standalone_result_edit_ajax(request, result_id):
 
     ak = exam.get_answer_key(res.exam_set)
     if ak:
+        tpl_path = get_template_path(exam.template_name)
+        tpl_data = _get_template_data(tpl_path)
         score_res = calculate_score(
             res.answers_json,
             ak,
             correct_mark=exam.correct_mark,
-            wrong_mark=exam.wrong_mark
+            wrong_mark=exam.wrong_mark,
+            subjects=tpl_data.get('subjects')
         )
         res.marks = score_res['marks']
+        res.subject_marks = score_res.get('subject_marks')
         res.correct_count = score_res['correct']
         res.wrong_count = score_res['wrong']
         res.unattempted_count = score_res['unattempted']
@@ -1378,7 +1440,7 @@ def institute_settings_view(request):
 
 
 def standalone_export_csv(request, exam_id):
-    """Export tabulation results as CSV file."""
+    """Export tabulation results as CSV file with subject-wise columns when available."""
     import csv
     exam = get_object_or_404(StandaloneExam, id=exam_id)
     results = exam.results.all().order_by('rank', '-marks', 'roll_no')
@@ -1387,12 +1449,26 @@ def standalone_export_csv(request, exam_id):
     response['Content-Disposition'] = f'attachment; filename="exam_{exam.id}_results.csv"'
     response.write('\ufeff'.encode('utf8'))  # BOM for Excel
 
+    tpl_path = get_template_path(exam.template_name)
+    tpl_data = _get_template_data(tpl_path)
+    subjects = tpl_data.get('subjects', [])
+
     writer = csv.writer(response)
-    writer.writerow(['Rank (মেধা ক্রম)', 'Roll No (রোল নম্বর)', 'Exam Set (সেট)', 'Correct (সঠিক)', 'Wrong (ভুল)', 'Unattempted (ছেড়েছে)', 'Total Marks (প্রাপ্ত নম্বর)', 'Percentage'])
+    header = ['Rank (মেধা ক্রম)', 'Roll No (রোল নম্বর)', 'Exam Set (সেট)']
+    if subjects:
+        for s in subjects:
+            header.append(f"{s['name']} ({s.get('total_questions', '')})")
+    header.extend(['Correct (সঠিক)', 'Wrong (ভুল)', 'Unattempted (ছেড়েছে)', 'Total Marks (প্রাপ্ত নম্বর)', 'Percentage'])
+    writer.writerow(header)
 
     for r in results:
         pct = round((r.marks / (exam.total_questions * exam.correct_mark)) * 100, 2) if exam.total_questions > 0 else 0
-        writer.writerow([r.rank, r.roll_no, r.exam_set, r.correct_count, r.wrong_count, r.unattempted_count, r.marks, f"{pct}%"])
+        row = [r.rank, r.roll_no, r.exam_set]
+        if subjects:
+            for s in subjects:
+                row.append(r.get_subject_mark(s['name']))
+        row.extend([r.correct_count, r.wrong_count, r.unattempted_count, r.marks, f"{pct}%"])
+        writer.writerow(row)
 
     return response
 

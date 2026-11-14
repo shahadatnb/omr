@@ -46,6 +46,7 @@ test_*.py
 id_roi.jpg
 set_roi.jpg
 warped_sample.jpg
+img2026*.jpg
 
 # 7. Log files
 *.log

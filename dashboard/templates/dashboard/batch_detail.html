@@ -1,4 +1,5 @@
 {% extends 'dashboard/base.html' %}
+{% load omr_tags %}
 
 {% block title %}ব্যাচ ফলাফল #{{ batch.id }} | OMR Engine{% endblock %}
 
@@ -117,6 +118,11 @@
                         <th>ডিটেক্টেড রোল (OMR)</th>
                         <th>সেট</th>
                         <th>শিক্ষার্থীর তথ্য (লারাভেল)</th>
+                        {% if subjects %}
+                            {% for sub in subjects %}
+                            <th class="text-primary">{{ sub.name }} <small class="text-muted">({{ sub.total_questions }})</small></th>
+                            {% endfor %}
+                        {% endif %}
                         <th>সঠিক / ভুল</th>
                         <th>মোট প্রাপ্ত নম্বর</th>
                         <th>স্ট্যাটাস</th>
@@ -173,6 +179,13 @@
                                 {% endif %}
                             {% endif %}
                         </td>
+                        {% if subjects %}
+                            {% for sub in subjects %}
+                            <td>
+                                <strong class="text-dark">{{ item.subject_marks|get_item:sub.name }}</strong>
+                            </td>
+                            {% endfor %}
+                        {% endif %}
                         <td>
                             <span class="text-success fw-bold" id="online-correct-{{ item.id }}">+{{ item.correct_count }}</span> / 
                             <span class="text-danger fw-bold" id="online-wrong-{{ item.id }}">-{{ item.wrong_count }}</span>

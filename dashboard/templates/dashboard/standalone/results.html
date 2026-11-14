@@ -1,4 +1,5 @@
 {% extends 'dashboard/base.html' %}
+{% load omr_tags %}
 
 {% block title %}ফলাফল ও মেরিট লিস্ট — {{ exam.title }} | OMR Engine{% endblock %}
 
@@ -102,6 +103,11 @@
                         <th class="ps-4" style="width: 80px;">মেরিট</th>
                         <th>মোবাইল নম্বর / রোল</th>
                         <th>সেট</th>
+                        {% if subjects %}
+                            {% for sub in subjects %}
+                            <th class="text-primary">{{ sub.name }} <small class="text-muted">({{ sub.total_questions }})</small></th>
+                            {% endfor %}
+                        {% endif %}
                         <th>সঠিক (+)</th>
                         <th>ভুল (-)</th>
                         <th>ছেড়েছে</th>
@@ -155,6 +161,13 @@
                                 </ul>
                             </div>
                         </td>
+                        {% if subjects %}
+                            {% for sub in subjects %}
+                            <td>
+                                <strong class="text-dark">{{ r.subject_marks|get_item:sub.name }}</strong>
+                            </td>
+                            {% endfor %}
+                        {% endif %}
                         <td><span class="text-success fw-bold" id="standalone-correct-{{ r.id }}">+{{ r.correct_count }}</span></td>
                         <td><span class="text-danger fw-bold" id="standalone-wrong-{{ r.id }}">-{{ r.wrong_count }}</span></td>
                         <td><span class="text-muted" id="standalone-unattempted-{{ r.id }}">{{ r.unattempted_count }}</span></td>

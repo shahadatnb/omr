@@ -102,8 +102,16 @@ def process_sheet(image_path, template_path, answer_key=None, debug=False):
         # Step 3: Perspective Correction
         # কোণার ■ চিহ্ন খুঁজে শিট সোজা করো
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        output_size = tuple(template.get('output_size', [794, 1123]))
-        corners = find_corner_markers(image)
+        if 'dimensions' in template:
+            output_size = (int(template['dimensions'].get('width', 794)), int(template['dimensions'].get('height', 1123)))
+        else:
+            output_size = tuple(template.get('output_size', [794, 1123]))
+
+        cm_cfg = template.get('corner_markers', {})
+        min_area = cm_cfg.get('min_area', 150)
+        max_area = cm_cfg.get('max_area', 2500)
+        aspect_tol = cm_cfg.get('aspect_tolerance', 0.4)
+        corners = find_corner_markers(image, min_area=min_area, max_area=max_area, aspect_tolerance=aspect_tol)
 
         if corners:
             warped = warp_sheet(image, corners, output_size=output_size)
@@ -159,6 +167,7 @@ def process_sheet(image_path, template_path, answer_key=None, debug=False):
                 answer_key,
                 correct_mark=correct_mark,
                 wrong_mark=wrong_mark,
+                subjects=template.get('subjects'),
             )
 
             if debug:

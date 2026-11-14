@@ -49,6 +49,7 @@ class ScanResult(models.Model):
     
     # Scoring
     marks = models.FloatField(default=0.0)
+    subject_marks = models.JSONField(default=dict, blank=True, null=True, help_text="বিষয়ভিত্তিক নম্বরসমূহ")
     correct_count = models.IntegerField(default=0)
     wrong_count = models.IntegerField(default=0)
     unattempted_count = models.IntegerField(default=0)
@@ -63,6 +64,14 @@ class ScanResult(models.Model):
     student_reg_no = models.CharField(max_length=100, blank=True, null=True)
 
     error_message = models.TextField(blank=True, null=True)
+
+    def get_subject_mark(self, subject_name):
+        if not self.subject_marks or not isinstance(self.subject_marks, dict):
+            return '-'
+        val = self.subject_marks.get(subject_name)
+        if val is not None:
+            return f"{float(val):.2f}"
+        return '-'
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -141,6 +150,7 @@ class StandaloneResult(models.Model):
     
     answers_json = models.JSONField(default=dict, blank=True)
     marks = models.FloatField(default=0.0)
+    subject_marks = models.JSONField(default=dict, blank=True, null=True, help_text="বিষয়ভিত্তিক নম্বরসমূহ")
     correct_count = models.IntegerField(default=0)
     wrong_count = models.IntegerField(default=0)
     unattempted_count = models.IntegerField(default=0)
@@ -155,6 +165,14 @@ class StandaloneResult(models.Model):
     sms_sent_at = models.DateTimeField(null=True, blank=True)
     sms_error = models.TextField(blank=True, null=True)
     error_message = models.TextField(blank=True, null=True)
+
+    def get_subject_mark(self, subject_name):
+        if not self.subject_marks or not isinstance(self.subject_marks, dict):
+            return '-'
+        val = self.subject_marks.get(subject_name)
+        if val is not None:
+            return f"{float(val):.2f}"
+        return '-'
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:

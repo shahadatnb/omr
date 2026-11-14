@@ -1,3 +1,4 @@
+{% load omr_tags %}
 <!DOCTYPE html>
 <html lang="bn">
 <head>
@@ -165,6 +166,11 @@
                 <th style="width: 70px;">মেধা ক্রম</th>
                 <th style="width: 140px;">রোল নম্বর (Roll No)</th>
                 <th style="width: 65px;">সেট</th>
+                {% if subjects %}
+                    {% for sub in subjects %}
+                    <th>{{ sub.name }}</th>
+                    {% endfor %}
+                {% endif %}
                 <th style="width: 80px;">সঠিক (+)</th>
                 <th style="width: 80px;">ভুল (-)</th>
                 <th style="width: 80px;">ছেড়েছে</th>
@@ -178,6 +184,11 @@
                 <td class="fw-bold">#{{ r.rank }}</td>
                 <td class="font-monospace fw-bold fs-6">{{ r.roll_no }}</td>
                 <td class="fw-bold">Set {{ r.exam_set }}</td>
+                {% if subjects %}
+                    {% for sub in subjects %}
+                    <td class="fw-bold">{{ r.subject_marks|get_item:sub.name }}</td>
+                    {% endfor %}
+                {% endif %}
                 <td class="text-success fw-bold">{{ r.correct_count }}</td>
                 <td class="text-danger">{{ r.wrong_count }}</td>
                 <td class="text-muted">{{ r.unattempted_count }}</td>

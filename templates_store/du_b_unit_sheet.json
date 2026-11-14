@@ -1,0 +1,107 @@
+{
+  "name": "DU-B Unit Admission Challenge (75Q Multi-Subject)",
+  "version": "1.0",
+  "dimensions": {
+    "width": 1024,
+    "height": 700
+  },
+  "corner_markers": {
+    "min_area": 150,
+    "max_area": 1000,
+    "aspect_tolerance": 0.4
+  },
+  "set_region": {
+    "x": 776,
+    "y": 39,
+    "w": 30,
+    "h": 143,
+    "rows": 4,
+    "columns": 1
+  },
+  "id_grid": {
+    "x": 826,
+    "y": 59,
+    "w": 164,
+    "h": 237,
+    "rows": 10,
+    "columns": 6
+  },
+  "answer_columns": [
+    {
+      "column_index": 1,
+      "subject": "Bangla",
+      "q_start": 1,
+      "q_end": 15,
+      "x": 75,
+      "y": 333,
+      "w": 109,
+      "h": 354
+    },
+    {
+      "column_index": 2,
+      "subject": "English",
+      "q_start": 16,
+      "q_end": 30,
+      "x": 289,
+      "y": 333,
+      "w": 109,
+      "h": 354
+    },
+    {
+      "column_index": 3,
+      "subject": "General Knowledge",
+      "q_start": 31,
+      "q_end": 45,
+      "x": 504,
+      "y": 333,
+      "w": 108,
+      "h": 354
+    },
+    {
+      "column_index": 4,
+      "subject": "General Knowledge",
+      "q_start": 46,
+      "q_end": 60,
+      "x": 664,
+      "y": 333,
+      "w": 109,
+      "h": 354
+    },
+    {
+      "column_index": 5,
+      "subject": "Elective English",
+      "q_start": 61,
+      "q_end": 75,
+      "x": 877,
+      "y": 333,
+      "w": 109,
+      "h": 354
+    }
+  ],
+  "subjects": [
+    {
+      "name": "Bangla",
+      "q_start": 1,
+      "q_end": 15,
+      "total_questions": 15
+    },
+    {
+      "name": "English",
+      "q_start": 16,
+      "q_end": 30,
+      "total_questions": 15
+    },
+    {
+      "name": "General Knowledge",
+      "q_start": 31,
+      "q_end": 60,
+      "total_questions": 30
+    },
+    {
+      "name": "Elective English",
+      "q_start": 61,
+      "q_end": 75,
+      "total_questions": 15
+    }
+  ]
+}

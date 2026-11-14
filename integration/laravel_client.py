@@ -93,6 +93,7 @@ class LaravelOmrClient:
         correct_answer: Optional[int] = None,
         wrong_answer: Optional[int] = None,
         is_absend: int = 0,
+        subject_marks: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Update single student test item result."""
         url = f"{self.base_url}/result"
@@ -103,6 +104,9 @@ class LaravelOmrClient:
             "wrong_answer": wrong_answer,
             "is_absend": is_absend,
         }
+        if subject_marks is not None:
+            payload["subject_marks"] = subject_marks
+
         resp = self.session.post(url, json=payload, timeout=self.timeout)
         resp.raise_for_status()
         return resp.json()
