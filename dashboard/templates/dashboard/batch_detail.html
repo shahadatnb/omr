@@ -20,6 +20,9 @@
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#appendFilesModal">
             <i class="fa fa-plus-circle me-1"></i> আরও ওএমআর ফাইল যোগ করুন
         </button>
+        <button type="button" class="btn btn-outline-warning fw-bold text-dark" id="btnRegenerateBatch" onclick="regenerateBatchResults()" title="লারাভেলের সর্বশেষ Answer Key অনুযায়ী ব্যাচের সকল শিটের নম্বর পুনরায় হিসেব করুন">
+            <i class="fa fa-sync-alt me-1"></i> রেজাল্ট রিজেনারেট
+        </button>
         <a href="{% url 'dashboard:sync_to_laravel' batch.id %}" class="btn btn-success" onclick="return confirm('আপনি কি নিশ্চিত যে সকল ম্যাচড শিক্ষার্থীর প্রাপ্ত নম্বর লারাভেলে পাঠাতে চান?');">
             <i class="fa fa-sync-alt me-1"></i> লারাভেলে রেজাল্ট সিঙ্ক করুন
         </a>
@@ -471,6 +474,41 @@ async function changeOnlineSet(resultId, newSet) {
         alert('সার্ভারের সাথে যোগাযোগ করতে ব্যর্থ হয়েছে।');
     } finally {
         btn.disabled = false;
+    }
+}
+
+// Regenerate all results in this batch against latest Laravel Answer Keys
+async function regenerateBatchResults() {
+    if (!confirm('আপনি কি লারাভেলের সর্বশেষ Answer Key অনুযায়ী এই ব্যাচের সকল ওএমআর শিটের নম্বর পুনরায় হিসেব/রিজেনারেট করতে চান?')) {
+        return;
+    }
+
+    const btn = document.getElementById('btnRegenerateBatch');
+    const origHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>প্রসেসিং...`;
+
+    try {
+        const resp = await fetch(`{% url 'dashboard:batch_regenerate_results_ajax' batch.id %}`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        });
+        const data = await resp.json();
+        if (data.success) {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert(data.error || 'ব্যাচ রেজাল্ট রিজেনারেট ব্যর্থ হয়েছে।');
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+    } catch (err) {
+        console.error(err);
+        alert('সার্ভার এরর হয়েছে।');
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
     }
 }
 </script>

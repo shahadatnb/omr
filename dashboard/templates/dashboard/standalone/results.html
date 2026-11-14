@@ -16,6 +16,9 @@
         <p class="text-muted mb-0">তারিখ: {{ exam.exam_date|date:"d M Y" }} | মোট প্রশ্ন: {{ exam.total_questions }}টি | সঠিক: +{{ exam.correct_mark }} | ভুল: {{ exam.wrong_mark }} <span class="badge bg-light text-dark border ms-2"><i class="fa fa-file-code text-primary me-1"></i>{{ exam.template_name }}</span></p>
     </div>
     <div class="d-flex gap-2 flex-wrap">
+        <button type="button" class="btn btn-outline-danger fw-bold" id="btnRegenerateResults" onclick="regenerateStandaloneResults()" title="বর্তমান Answer Key এবং মার্কস নীতি অনুযায়ী সকল শিটের প্রাপ্ত নম্বর ও মেধা তালিকা (Rank) পুনরায় হিসেব করুন">
+            <i class="fa fa-sync-alt me-1"></i> রেজাল্ট রিজেনারেট
+        </button>
         <button type="button" class="btn btn-warning fw-bold text-dark" onclick="openSmsModal()">
             <i class="fa fa-sms me-1"></i> মডেম দিয়ে এসএমএস পাঠান
         </button>
@@ -1047,6 +1050,41 @@ async function submitContactsImport() {
         statusDiv.classList.remove('d-none');
         submitBtn.disabled = false;
         submitBtn.innerHTML = `<i class="fa fa-upload me-1"></i> আপলোড ও সিঙ্ক করুন`;
+    }
+}
+
+// Regenerate all results for this standalone exam
+async function regenerateStandaloneResults() {
+    if (!confirm('আপনি কি বর্তমান Answer Key এবং মার্কস নীতি অনুযায়ী এই পরীক্ষার সকল শিটের প্রাপ্ত নম্বর ও মেধা তালিকা (Rank) পুনরায় হিসেব/রিজেনারেট করতে চান?')) {
+        return;
+    }
+
+    const btn = document.getElementById('btnRegenerateResults');
+    const origHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>প্রসেসিং...`;
+
+    try {
+        const resp = await fetch(`{% url 'dashboard:standalone_regenerate_results_ajax' exam.id %}`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        });
+        const data = await resp.json();
+        if (data.success) {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert(data.error || 'রেজাল্ট রিজেনারেট ব্যর্থ হয়েছে।');
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+    } catch (err) {
+        console.error(err);
+        alert('সার্ভার এরর হয়েছে।');
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
     }
 }
 </script>

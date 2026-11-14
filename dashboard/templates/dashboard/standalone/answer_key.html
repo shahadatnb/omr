@@ -140,6 +140,11 @@
         </div>
         <!-- Action Toolbar: Master Sheet Upload & Quick String -->
         <div class="d-flex align-items-center gap-2 flex-wrap">
+            <!-- Copy from previous exam -->
+            <button type="button" class="btn btn-sm btn-outline-success fw-bold" data-bs-toggle="modal" data-bs-target="#copyKeysModal" title="অন্য কোনো পরীক্ষা থেকে Answer Key কপি করে আনুন">
+                <i class="fa fa-copy me-1"></i> পূর্বের পরীক্ষা থেকে কপি
+            </button>
+
             <!-- Upload filled sheet to auto-populate answers -->
             <button type="button" class="btn btn-sm btn-primary fw-bold" id="uploadSheetBtn" onclick="document.getElementById('masterSheetInput').click()" title="ফিলাপ করা মাস্টার ওএমআর শিট আপলোড করে স্বয়ংক্রিয়ভাবে উত্তর পূরণ করুন">
                 <i class="fa fa-camera me-1"></i> ওএমআর শিট থেকে পূরণ
@@ -351,5 +356,92 @@ async function handleMasterSheetUpload(input) {
         input.value = ''; // Reset input so same file can be re-selected
     }
 }
+
+// Copy Answer Keys from another exam
+async function executeCopyKeys() {
+    const sourceExamId = document.getElementById('copySourceExamId').value;
+    if (!sourceExamId) {
+        alert('অনুগ্রহ করে একটি সোর্স পরীক্ষা নির্বাচন করুন।');
+        return;
+    }
+    const scope = document.querySelector('input[name="copyScopeRadio"]:checked').value;
+    const btn = document.getElementById('btnConfirmCopyKeys');
+    const origHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>কপি হচ্ছে...`;
+
+    const formData = new FormData();
+    formData.append('source_exam_id', sourceExamId);
+    formData.append('copy_scope', scope);
+    formData.append('active_set', '{{ active_set }}');
+
+    try {
+        const resp = await fetch(`{% url 'dashboard:standalone_copy_keys_ajax' exam.id %}`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: formData
+        });
+        const data = await resp.json();
+        if (data.success) {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert(data.error || 'কপি করা সম্ভব হয়নি।');
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+    } catch (err) {
+        console.error(err);
+        alert('সার্ভার এরর হয়েছে।');
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+    }
+}
 </script>
+
+<!-- Copy Keys Modal -->
+<div class="modal fade" id="copyKeysModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold"><i class="fa fa-copy text-success me-2"></i>পূর্বের পরীক্ষা থেকে Answer Key কপি</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">সোর্স পরীক্ষা নির্বাচন করুন</label>
+                    <select class="form-select" id="copySourceExamId">
+                        <option value="">-- পরীক্ষা নির্বাচন করুন --</option>
+                        {% for pe in previous_exams %}
+                            <option value="{{ pe.id }}">{{ pe.title }} ({{ pe.exam_date|date:"d M Y" }}) - {{ pe.total_questions }}টি প্রশ্ন</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">কপির পরিধি (Scope)</label>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="copyScopeRadio" id="scopeAll" value="all" checked>
+                        <label class="form-check-label fw-bold" for="scopeAll">
+                            সকল সেট (Set A, B, C, D) কপি করুন
+                        </label>
+                        <div class="form-text small">সোর্স পরীক্ষার সব কয়টি সেটের উত্তর এখানে চলে আসবে।</div>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="copyScopeRadio" id="scopeActive" value="active">
+                        <label class="form-check-label fw-bold" for="scopeActive">
+                            শুধু বর্তমান <span class="badge bg-primary">Set {{ active_set }}</span> কপি করুন
+                        </label>
+                        <div class="form-text small">অন্য সেটগুলো অপরিবর্তিত রেখে শুধুমাত্র সক্রিয় সেটের উত্তর কপি হবে।</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">বাতিল</button>
+                <button type="button" class="btn btn-success fw-bold" id="btnConfirmCopyKeys" onclick="executeCopyKeys()">
+                    <i class="fa fa-check me-1"></i> কপি সম্পন্ন করুন
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}

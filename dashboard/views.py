@@ -596,6 +596,67 @@ def scan_result_change_set_ajax(request, result_id):
     })
 
 
+@require_POST
+def batch_regenerate_results_ajax(request, batch_id):
+    """
+    AJAX endpoint to recalculate scores for all sheets in an online batch.
+    Pulls fresh answer keys from Laravel for all sets (A, B, C, D) and recalculates marks.
+    """
+    batch = get_object_or_404(BatchJob, id=batch_id)
+    client = LaravelOmrClient(base_url=settings.LARAVEL_API_URL)
+
+    # Invalidate cached answer keys
+    _ANSWER_KEY_CACHE.clear()
+
+    tpl_path = get_template_path(batch.template_name)
+    tpl_data = _get_template_data(tpl_path)
+    subjects = tpl_data.get('subjects')
+
+    keys = {}
+    for s in ['A', 'B', 'C', 'D']:
+        ak = _get_cached_answer_key(client, batch.class_test_id, s)
+        if ak and 'answers' in ak:
+            keys[s] = ak
+
+    rescored_count = 0
+    missing_key_sets = set()
+
+    for res in batch.results.all():
+        s = res.exam_set or 'A'
+        ak = keys.get(s)
+        if ak and 'answers' in ak:
+            score_res = calculate_score(
+                res.answers_json,
+                ak['answers'],
+                correct_mark=ak.get('correct_mark', 1.0),
+                wrong_mark=ak.get('wrong_mark', -0.25),
+                subjects=subjects
+            )
+            res.marks = score_res['marks']
+            res.subject_marks = score_res.get('subject_marks')
+            res.correct_count = score_res['correct']
+            res.wrong_count = score_res['wrong']
+            res.unattempted_count = score_res['unattempted']
+            res.error_message = None
+            res.save()
+            rescored_count += 1
+        else:
+            missing_key_sets.add(s)
+
+    batch.update_stats()
+
+    msg = f"মোট {rescored_count}টি শিটের ফলাফল সফলভাবে রিজেনারেট ও পুনর্মূল্যায়ন করা হয়েছে!"
+    if missing_key_sets:
+        msg += f" (সতর্কতা: Set {', '.join(sorted(missing_key_sets))}-এর Answer Key লারাভেলে পাওয়া যায়নি।)"
+
+    return JsonResponse({
+        'success': True,
+        'message': msg,
+        'rescored_count': rescored_count,
+        'total_count': batch.results.count()
+    })
+
+
 def sync_to_laravel(request, batch_id):
     """
     Push all matched & manually resolved marks to Laravel /api/omr/batch.
@@ -881,7 +942,7 @@ def standalone_list(request):
 
 
 def standalone_create(request):
-    """Create a new standalone exam with scoring rules and selected OMR template."""
+    """Create a new standalone exam with scoring rules, selected OMR template, and optional key copying from previous exam."""
     if request.method == 'POST':
         title = request.POST.get('title', '').strip()
         exam_date = request.POST.get('exam_date')
@@ -889,6 +950,7 @@ def standalone_create(request):
         correct_mark = float(request.POST.get('correct_mark', 1.0))
         wrong_mark = float(request.POST.get('wrong_mark', -0.25))
         template_name = request.POST.get('template_name', 'offline_exam_100q.json').strip() or 'offline_exam_100q.json'
+        copy_from_id = request.POST.get('copy_keys_from_exam_id')
 
         if not title:
             messages.error(request, 'পরীক্ষার নাম লিখুন।')
@@ -902,12 +964,28 @@ def standalone_create(request):
             wrong_mark=wrong_mark,
             template_name=template_name
         )
-        messages.success(request, f'পরীক্ষা "{exam.title}" তৈরি হয়েছে। এখন Answer Key সেট করুন।')
+
+        copied_msg = ""
+        if copy_from_id:
+            try:
+                source_exam = StandaloneExam.objects.get(id=int(copy_from_id))
+                exam.answers_set_a = source_exam.answers_set_a or {}
+                exam.answers_set_b = source_exam.answers_set_b or {}
+                exam.answers_set_c = source_exam.answers_set_c or {}
+                exam.answers_set_d = source_exam.answers_set_d or {}
+                exam.save()
+                copied_msg = f' এবং "{source_exam.title}" থেকে Answer Key সফলভাবে কপি করা হয়েছে!'
+            except (StandaloneExam.DoesNotExist, ValueError):
+                pass
+
+        messages.success(request, f'পরীক্ষা "{exam.title}" তৈরি হয়েছে{copied_msg}।')
         return redirect('dashboard:standalone_answer_key', exam_id=exam.id)
 
     available_templates = get_available_templates()
+    previous_exams = StandaloneExam.objects.all().order_by('-created_at')
     return render(request, 'dashboard/standalone/exam_create.html', {
-        'available_templates': available_templates
+        'available_templates': available_templates,
+        'previous_exams': previous_exams,
     })
 
 
@@ -979,12 +1057,86 @@ def standalone_answer_key(request, exam_id):
         if start <= total:
             question_columns.append(list(range(start, end)))
 
+    previous_exams = StandaloneExam.objects.exclude(id=exam.id).order_by('-created_at')
+
     return render(request, 'dashboard/standalone/answer_key.html', {
         'exam': exam,
         'active_set': active_set,
         'current_key': current_key,
         'questions_range': range(1, exam.total_questions + 1),
         'question_columns': question_columns,
+        'previous_exams': previous_exams,
+    })
+
+
+@require_POST
+def standalone_copy_keys_ajax(request, exam_id):
+    """
+    AJAX endpoint to copy answer keys from another StandaloneExam into the current exam.
+    Supports copying all sets (A, B, C, D) or only the active set.
+    """
+    exam = get_object_or_404(StandaloneExam, id=exam_id)
+    source_exam_id = request.POST.get('source_exam_id')
+    copy_scope = request.POST.get('copy_scope', 'all')
+    active_set = request.POST.get('active_set', 'A').upper()
+
+    if not source_exam_id:
+        return JsonResponse({'success': False, 'error': 'কোনো সোর্স পরীক্ষা নির্বাচন করা হয়নি।'}, status=400)
+
+    try:
+        source_exam = StandaloneExam.objects.get(id=int(source_exam_id))
+    except (StandaloneExam.DoesNotExist, ValueError):
+        return JsonResponse({'success': False, 'error': 'সোর্স পরীক্ষাটি পাওয়া যায়নি।'}, status=404)
+
+    if copy_scope == 'active':
+        src_key = source_exam.get_answer_key(active_set)
+        if active_set == 'A':
+            exam.answers_set_a = src_key or {}
+        elif active_set == 'B':
+            exam.answers_set_b = src_key or {}
+        elif active_set == 'C':
+            exam.answers_set_c = src_key or {}
+        elif active_set == 'D':
+            exam.answers_set_d = src_key or {}
+        exam.save()
+        msg = f'"{source_exam.title}" থেকে Set {active_set}-এর Answer Key সফলভাবে কপি করা হয়েছে!'
+    else:
+        exam.answers_set_a = source_exam.answers_set_a or {}
+        exam.answers_set_b = source_exam.answers_set_b or {}
+        exam.answers_set_c = source_exam.answers_set_c or {}
+        exam.answers_set_d = source_exam.answers_set_d or {}
+        exam.save()
+        msg = f'"{source_exam.title}" থেকে সকল সেট (A, B, C, D)-এর Answer Key সফলভাবে কপি করা হয়েছে!'
+
+    # Recalculate existing results if any
+    tpl_path = get_template_path(exam.template_name)
+    tpl_data = _get_template_data(tpl_path)
+    recalc_count = 0
+    for res in exam.results.all():
+        ak = exam.get_answer_key(res.exam_set)
+        if ak:
+            score_res = calculate_score(
+                res.answers_json,
+                ak,
+                correct_mark=exam.correct_mark,
+                wrong_mark=exam.wrong_mark,
+                subjects=tpl_data.get('subjects')
+            )
+            res.marks = score_res['marks']
+            res.subject_marks = score_res.get('subject_marks')
+            res.correct_count = score_res['correct']
+            res.wrong_count = score_res['wrong']
+            res.unattempted_count = score_res['unattempted']
+            res.save()
+            recalc_count += 1
+    if recalc_count > 0:
+        exam.recalculate_ranks()
+
+    return JsonResponse({
+        'success': True,
+        'message': msg,
+        'active_key': exam.get_answer_key(active_set) or {},
+        'active_set': active_set
     })
 
 
@@ -1162,6 +1314,55 @@ def standalone_finalize_ranks_ajax(request, exam_id):
     return JsonResponse({
         'success': True,
         'total_evaluated': exam.total_sheets
+    })
+
+
+@require_POST
+def standalone_regenerate_results_ajax(request, exam_id):
+    """
+    AJAX endpoint to recalculate scores and merit ranks for all sheets of a standalone exam.
+    Useful after editing answer keys, changing marks policy, or fixing misread sets.
+    """
+    exam = get_object_or_404(StandaloneExam, id=exam_id)
+    tpl_path = get_template_path(exam.template_name)
+    tpl_data = _get_template_data(tpl_path)
+    subjects = tpl_data.get('subjects')
+
+    results = exam.results.all()
+    rescored_count = 0
+    missing_key_sets = set()
+
+    for res in results:
+        ak = exam.get_answer_key(res.exam_set)
+        if ak:
+            score_res = calculate_score(
+                res.answers_json,
+                ak,
+                correct_mark=exam.correct_mark,
+                wrong_mark=exam.wrong_mark,
+                subjects=subjects
+            )
+            res.marks = score_res['marks']
+            res.subject_marks = score_res.get('subject_marks')
+            res.correct_count = score_res['correct']
+            res.wrong_count = score_res['wrong']
+            res.unattempted_count = score_res['unattempted']
+            res.save()
+            rescored_count += 1
+        else:
+            missing_key_sets.add(res.exam_set)
+
+    exam.recalculate_ranks()
+
+    msg = f"মোট {rescored_count}টি শিটের ফলাফল সফলভাবে রিজেনারেট ও মেধা তালিকা (Rank) হালনাগাদ করা হয়েছে!"
+    if missing_key_sets:
+        msg += f" (সতর্কতা: Set {', '.join(sorted(missing_key_sets))}-এর Answer Key দেওয়া হয়নি।)"
+
+    return JsonResponse({
+        'success': True,
+        'message': msg,
+        'rescored_count': rescored_count,
+        'total_count': results.count()
     })
 
 

@@ -37,6 +37,19 @@
                     </div>
 
                     <div class="mb-3">
+                        <label for="copy_keys_from_exam_id" class="form-label fw-bold">
+                            <i class="fa fa-copy text-success me-1"></i> পূর্বের পরীক্ষা থেকে Answer Key কপি করুন (ঐচ্ছিক)
+                        </label>
+                        <select class="form-select" id="copy_keys_from_exam_id" name="copy_keys_from_exam_id">
+                            <option value="">-- কোনো পরীক্ষা নয় (নতুন করে তৈরি করুন) --</option>
+                            {% for pe in previous_exams %}
+                                <option value="{{ pe.id }}">{{ pe.title }} ({{ pe.exam_date|date:"d M Y" }}) - {{ pe.total_questions }}টি প্রশ্ন</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text text-muted">পূর্বে সম্পন্ন কোনো পরীক্ষার Answer Key (A, B, C, D) নতুন পরীক্ষায় সরাসরি কপি করে নিতে চাইলে নির্বাচন করুন।</div>
+                    </div>
+
+                    <div class="mb-3">
                         <label for="template_name" class="form-label fw-bold">
                             <i class="fa fa-file-code text-primary me-1"></i> ওএমআর শিট টেমপ্লেট
                         </label>
