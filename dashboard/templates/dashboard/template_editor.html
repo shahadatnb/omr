@@ -80,11 +80,68 @@
     <div id="sampleUploadMessage"></div>
 </div>
 
-<div class="alert alert-info py-2 d-flex justify-content-between align-items-center mb-3">
-    <div>
-        <i class="fa fa-info-circle me-1"></i> বর্তমান সক্রিয় টেমপ্লেট: <strong>{{ template_data.name|default:current_template_filename }}</strong> (<code>{{ current_template_filename }}</code>)
+<!-- ORIENTATION & DIMENSION CONTROLS TOOLBAR -->
+<div class="card shadow-sm mb-3">
+    <div class="card-body py-2 px-3">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <!-- Left: Current Template & Orientation Switch -->
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <div class="fw-bold small text-dark me-1">
+                    <i class="fa fa-info-circle text-primary me-1"></i> টেমপ্লেট: <strong>{{ template_data.name|default:current_template_filename }}</strong>
+                </div>
+
+                <div class="vr mx-1 d-none d-md-block"></div>
+
+                <!-- Orientation Toggle Buttons -->
+                <div class="d-flex align-items-center gap-1">
+                    <span class="fw-bold small text-muted"><i class="fa fa-compass text-secondary me-1"></i>ওরিয়েন্টেশন:</span>
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Orientation Switch">
+                        <button type="button" class="btn btn-primary active fw-bold" id="btnPortrait" onclick="switchOrientation('portrait')" title="পোর্ট্রেট মোড (লম্বালম্বি: ৭৯৪ × ১১২৩ px)">
+                            <i class="fa fa-file-alt me-1"></i> পোর্ট্রেট (Portrait)
+                        </button>
+                        <button type="button" class="btn btn-outline-primary fw-bold" id="btnLandscape" onclick="switchOrientation('landscape')" title="ল্যান্ডস্কেপ মোড (আড়াআড়ি: ১১২৩ × ৭৯৪ px)">
+                            <i class="fa fa-file-image me-1"></i> ল্যান্ডস্কেপ (Landscape)
+                        </button>
+                    </div>
+                </div>
+
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="rotateBgImage()" title="নমুনা শিট ৯০° ডানদিকে ঘোরান (Rotate 90° Clockwise)">
+                    <i class="fa fa-redo me-1"></i> শিট ৯০° ঘোরান
+                </button>
+            </div>
+
+            <!-- Right: Dimensions & Preset Shortcuts -->
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <div class="d-flex align-items-center gap-1">
+                    <span class="small text-muted fw-bold">সাইজ:</span>
+                    <div class="input-group input-group-sm" style="width: 105px;" title="প্রস্থ (Width in px)">
+                        <span class="input-group-text px-1 small">W</span>
+                        <input type="number" class="form-control px-1 text-center" id="dim_width" value="{{ template_data.dimensions.width|default:794 }}" oninput="onCustomDimensionsChange()">
+                    </div>
+                    <span class="text-muted">×</span>
+                    <div class="input-group input-group-sm" style="width: 105px;" title="উচ্চতা (Height in px)">
+                        <span class="input-group-text px-1 small">H</span>
+                        <input type="number" class="form-control px-1 text-center" id="dim_height" value="{{ template_data.dimensions.height|default:1123 }}" oninput="onCustomDimensionsChange()">
+                    </div>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="swapDimensions()" title="প্রস্থ এবং উচ্চতা অদলবদল (Swap W/H) করুন">
+                        <i class="fa fa-exchange-alt"></i>
+                    </button>
+                </div>
+
+                <span class="badge bg-secondary" id="orientationBadge">পোর্ট্রেট ({{ template_data.dimensions.width|default:794 }}×{{ template_data.dimensions.height|default:1123 }} px)</span>
+
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-info dropdown-toggle fw-bold" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="আদর্শ স্থানাঙ্ক প্রিসেট">
+                        <i class="fa fa-magic me-1"></i> প্রিসেট
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        <li><a class="dropdown-item" href="javascript:void(0)" onclick="applyLandscapePreset()"><i class="fa fa-file-image text-primary me-2"></i>ল্যান্ডস্কেপ আদর্শ গ্রিড (1123×794)</a></li>
+                        <li><a class="dropdown-item" href="javascript:void(0)" onclick="applyPortraitPreset()"><i class="fa fa-file-alt text-success me-2"></i>পোর্ট্রেট স্ট্যান্ডার্ড গ্রিড (794×1123)</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
     </div>
-    <span class="badge bg-secondary">আকার: {{ template_data.dimensions.width|default:794 }} x {{ template_data.dimensions.height|default:1123 }} px</span>
 </div>
 
 <form id="templateForm" method="post" action="{% url 'dashboard:template_editor' %}">
@@ -282,6 +339,223 @@ if (templateData && templateData.answer_columns && templateData.answer_columns.l
     document.getElementById('col4_h').value = templateData.answer_columns[3].h;
 }
 
+// Initialize canvas dimensions from templateData or default
+let initW = 794;
+let initH = 1123;
+if (templateData && templateData.dimensions) {
+    initW = parseInt(templateData.dimensions.width) || 794;
+    initH = parseInt(templateData.dimensions.height) || 1123;
+}
+document.getElementById('dim_width').value = initW;
+document.getElementById('dim_height').value = initH;
+applyCanvasDimensions();
+
+function switchOrientation(mode) {
+    const dimWidthInput = document.getElementById('dim_width');
+    const dimHeightInput = document.getElementById('dim_height');
+    let currentW = parseInt(dimWidthInput.value) || 794;
+    let currentH = parseInt(dimHeightInput.value) || 1123;
+
+    if (mode === 'landscape') {
+        if (currentW < currentH) {
+            dimWidthInput.value = currentH;
+            dimHeightInput.value = currentW;
+        } else if (currentW === currentH) {
+            dimWidthInput.value = 1123;
+            dimHeightInput.value = 794;
+        }
+    } else {
+        if (currentW > currentH) {
+            dimWidthInput.value = currentH;
+            dimHeightInput.value = currentW;
+        } else if (currentW === currentH) {
+            dimWidthInput.value = 794;
+            dimHeightInput.value = 1123;
+        }
+    }
+    applyCanvasDimensions();
+}
+
+function swapDimensions() {
+    const dimWidthInput = document.getElementById('dim_width');
+    const dimHeightInput = document.getElementById('dim_height');
+    const temp = dimWidthInput.value;
+    dimWidthInput.value = dimHeightInput.value;
+    dimHeightInput.value = temp;
+    applyCanvasDimensions();
+}
+
+function onCustomDimensionsChange() {
+    applyCanvasDimensions();
+}
+
+function applyCanvasDimensions() {
+    const dimWidthInput = document.getElementById('dim_width');
+    const dimHeightInput = document.getElementById('dim_height');
+    const w = parseInt(dimWidthInput.value) || 794;
+    const h = parseInt(dimHeightInput.value) || 1123;
+
+    canvas.width = w;
+    canvas.height = h;
+
+    const isLandscape = w > h;
+    const btnPortrait = document.getElementById('btnPortrait');
+    const btnLandscape = document.getElementById('btnLandscape');
+    const orientationBadge = document.getElementById('orientationBadge');
+
+    if (btnPortrait && btnLandscape) {
+        if (isLandscape) {
+            btnLandscape.className = 'btn btn-primary active fw-bold';
+            btnPortrait.className = 'btn btn-outline-primary fw-bold';
+            if (orientationBadge) {
+                orientationBadge.className = 'badge bg-success';
+                orientationBadge.innerText = `ল্যান্ডস্কেপ (${w}×${h} px)`;
+            }
+        } else {
+            btnPortrait.className = 'btn btn-primary active fw-bold';
+            btnLandscape.className = 'btn btn-outline-primary fw-bold';
+            if (orientationBadge) {
+                orientationBadge.className = 'badge bg-secondary';
+                orientationBadge.innerText = `পোর্ট্রেট (${w}×${h} px)`;
+            }
+        }
+    }
+
+    redrawCanvas();
+}
+
+async function rotateBgImage() {
+    const alertBox = document.getElementById('sampleUploadAlert');
+    const msgBox = document.getElementById('sampleUploadMessage');
+    alertBox.className = 'alert alert-info py-2 d-flex align-items-center mb-3';
+    alertBox.classList.remove('d-none');
+    msgBox.innerHTML = '<i class="fa fa-spinner fa-spin me-2"></i> নমুনা শিট ৯০° ঘোরানো হচ্ছে... অনুগ্রহ করে অপেক্ষা করুন।';
+
+    const formData = new FormData();
+    formData.append('template_filename', "{{ current_template_filename }}");
+
+    try {
+        const resp = await fetch("{% url 'dashboard:template_rotate_sample_ajax' %}", {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: formData
+        });
+        const data = await resp.json();
+        if (data.success) {
+            alertBox.className = 'alert alert-success py-2 d-flex align-items-center mb-3';
+            msgBox.innerHTML = `<i class="fa fa-check-circle me-2"></i> ${data.message} ক্যানভাস হালনাগাদ করা হয়েছে।`;
+            bgImage.src = data.sample_url;
+
+            // Auto-swap canvas dimensions if image orientation now matches opposite
+            if (data.width && data.height) {
+                const isImgLandscape = data.width > data.height;
+                const isCanvasLandscape = canvas.width > canvas.height;
+                if (isImgLandscape !== isCanvasLandscape) {
+                    swapDimensions();
+                }
+            }
+        } else {
+            alertBox.className = 'alert alert-danger py-2 d-flex align-items-center mb-3';
+            msgBox.innerHTML = `<i class="fa fa-times-circle me-2"></i> ${data.error || 'ঘোরানো সম্ভব হয়নি।'}`;
+        }
+    } catch (err) {
+        console.error(err);
+        rotateBgImageClientSide();
+        alertBox.className = 'alert alert-warning py-2 d-flex align-items-center mb-3';
+        msgBox.innerHTML = '<i class="fa fa-info-circle me-2"></i> ব্রাউজারে সাময়িকভাবে নমুনা শিট ৯০° ঘোরানো হয়েছে।';
+    }
+}
+
+function rotateBgImageClientSide() {
+    if (!bgImage.complete || bgImage.naturalWidth === 0) return;
+    const offCanvas = document.createElement('canvas');
+    offCanvas.width = bgImage.naturalHeight;
+    offCanvas.height = bgImage.naturalWidth;
+    const offCtx = offCanvas.getContext('2d');
+    offCtx.translate(offCanvas.width / 2, offCanvas.height / 2);
+    offCtx.rotate((90 * Math.PI) / 180);
+    offCtx.drawImage(bgImage, -bgImage.naturalWidth / 2, -bgImage.naturalHeight / 2);
+    bgImage.src = offCanvas.toDataURL();
+}
+
+function applyLandscapePreset() {
+    if (!confirm('আপনি কি ল্যান্ডস্কেপ শিটের জন্য প্রস্তাবিত আদর্শ গ্রিড পজিশন বসাতে চান? (বর্তমান স্থানাঙ্কগুলো প্রতিস্থাপিত হবে)')) {
+        return;
+    }
+    switchOrientation('landscape');
+
+    document.getElementById('id_x').value = 80;
+    document.getElementById('id_y').value = 50;
+    document.getElementById('id_w').value = 180;
+    document.getElementById('id_h').value = 260;
+
+    document.getElementById('set_x').value = 280;
+    document.getElementById('set_y').value = 50;
+    document.getElementById('set_w').value = 34;
+    document.getElementById('set_h').value = 120;
+
+    document.getElementById('col1_x').value = 60;
+    document.getElementById('col1_y').value = 340;
+    document.getElementById('col1_w').value = 220;
+    document.getElementById('col1_h').value = 400;
+
+    document.getElementById('col2_x').value = 320;
+    document.getElementById('col2_y').value = 340;
+    document.getElementById('col2_w').value = 220;
+    document.getElementById('col2_h').value = 400;
+
+    document.getElementById('col3_x').value = 580;
+    document.getElementById('col3_y').value = 340;
+    document.getElementById('col3_w').value = 220;
+    document.getElementById('col3_h').value = 400;
+
+    document.getElementById('col4_x').value = 840;
+    document.getElementById('col4_y').value = 340;
+    document.getElementById('col4_w').value = 220;
+    document.getElementById('col4_h').value = 400;
+
+    redrawCanvas();
+}
+
+function applyPortraitPreset() {
+    if (!confirm('আপনি কি পোর্ট্রেট শিটের স্ট্যান্ডার্ড গ্রিড পজিশন রিসেট করতে চান?')) {
+        return;
+    }
+    switchOrientation('portrait');
+
+    document.getElementById('id_x').value = 570;
+    document.getElementById('id_y').value = 70;
+    document.getElementById('id_w').value = 190;
+    document.getElementById('id_h').value = 293;
+
+    document.getElementById('set_x').value = 516;
+    document.getElementById('set_y').value = 70;
+    document.getElementById('set_w').value = 34;
+    document.getElementById('set_h').value = 129;
+
+    document.getElementById('col1_x').value = 78;
+    document.getElementById('col1_y').value = 416;
+    document.getElementById('col1_w').value = 128;
+    document.getElementById('col1_h').value = 690;
+
+    document.getElementById('col2_x').value = 264;
+    document.getElementById('col2_y').value = 416;
+    document.getElementById('col2_w').value = 128;
+    document.getElementById('col2_h').value = 690;
+
+    document.getElementById('col3_x').value = 448;
+    document.getElementById('col3_y').value = 416;
+    document.getElementById('col3_w').value = 128;
+    document.getElementById('col3_h').value = 690;
+
+    document.getElementById('col4_x').value = 633;
+    document.getElementById('col4_y').value = 416;
+    document.getElementById('col4_w').value = 128;
+    document.getElementById('col4_h').value = 690;
+
+    redrawCanvas();
+}
+
 bgImage.onload = function() {
     redrawCanvas();
 };
@@ -374,58 +648,60 @@ function drawGrid(x, y, w, h, rows, cols, fillStyle, strokeStyle, label) {
 }
 
 function collectTemplateJson() {
-    return {
-        name: "Admission Challenge 100Q Template",
-        version: "1.0",
-        dimensions: { width: 794, height: 1123 },
-        corner_markers: { min_area: 100, max_area: 10000, aspect_tolerance: 0.4 },
-        id_grid: {
-            x: parseInt(document.getElementById('id_x').value),
-            y: parseInt(document.getElementById('id_y').value),
-            w: parseInt(document.getElementById('id_w').value),
-            h: parseInt(document.getElementById('id_h').value),
-            columns: parseInt(document.getElementById('id_cols').value),
-            rows: parseInt(document.getElementById('id_rows').value)
-        },
-        set_region: {
-            x: parseInt(document.getElementById('set_x').value),
-            y: parseInt(document.getElementById('set_y').value),
-            w: parseInt(document.getElementById('set_w').value),
-            h: parseInt(document.getElementById('set_h').value),
-            rows: 4,
-            columns: 1
-        },
-        answer_columns: [
-            {
-                column_index: 1, q_start: 1, q_end: 25,
-                x: parseInt(document.getElementById('col1_x').value),
-                y: parseInt(document.getElementById('col1_y').value),
-                w: parseInt(document.getElementById('col1_w').value),
-                h: parseInt(document.getElementById('col1_h').value)
-            },
-            {
-                column_index: 2, q_start: 26, q_end: 50,
-                x: parseInt(document.getElementById('col2_x').value),
-                y: parseInt(document.getElementById('col2_y').value),
-                w: parseInt(document.getElementById('col2_w').value),
-                h: parseInt(document.getElementById('col2_h').value)
-            },
-            {
-                column_index: 3, q_start: 51, q_end: 75,
-                x: parseInt(document.getElementById('col3_x').value),
-                y: parseInt(document.getElementById('col3_y').value),
-                w: parseInt(document.getElementById('col3_w').value),
-                h: parseInt(document.getElementById('col3_h').value)
-            },
-            {
-                column_index: 4, q_start: 76, q_end: 100,
-                x: parseInt(document.getElementById('col4_x').value),
-                y: parseInt(document.getElementById('col4_y').value),
-                w: parseInt(document.getElementById('col4_w').value),
-                h: parseInt(document.getElementById('col4_h').value)
-            }
-        ]
+    const w = parseInt(document.getElementById('dim_width').value) || 794;
+    const h = parseInt(document.getElementById('dim_height').value) || 1123;
+    const orientation = (w > h) ? 'landscape' : 'portrait';
+
+    const base = Object.assign({}, templateData);
+    base.name = base.name || "{{ current_template_filename }}";
+    base.version = base.version || "1.0";
+    base.orientation = orientation;
+    base.dimensions = { width: w, height: h };
+    base.corner_markers = base.corner_markers || { min_area: 100, max_area: 10000, aspect_tolerance: 0.4 };
+    base.id_grid = {
+        x: parseInt(document.getElementById('id_x').value) || 0,
+        y: parseInt(document.getElementById('id_y').value) || 0,
+        w: parseInt(document.getElementById('id_w').value) || 0,
+        h: parseInt(document.getElementById('id_h').value) || 0,
+        columns: parseInt(document.getElementById('id_cols').value) || 6,
+        rows: parseInt(document.getElementById('id_rows').value) || 10
     };
+    base.set_region = {
+        x: parseInt(document.getElementById('set_x').value) || 0,
+        y: parseInt(document.getElementById('set_y').value) || 0,
+        w: parseInt(document.getElementById('set_w').value) || 0,
+        h: parseInt(document.getElementById('set_h').value) || 0,
+        rows: (base.set_region && base.set_region.rows) ? base.set_region.rows : 4,
+        columns: (base.set_region && base.set_region.columns) ? base.set_region.columns : 1
+    };
+
+    const c1 = (base.answer_columns && base.answer_columns[0]) ? Object.assign({}, base.answer_columns[0]) : { column_index: 1, q_start: 1, q_end: 25 };
+    const c2 = (base.answer_columns && base.answer_columns[1]) ? Object.assign({}, base.answer_columns[1]) : { column_index: 2, q_start: 26, q_end: 50 };
+    const c3 = (base.answer_columns && base.answer_columns[2]) ? Object.assign({}, base.answer_columns[2]) : { column_index: 3, q_start: 51, q_end: 75 };
+    const c4 = (base.answer_columns && base.answer_columns[3]) ? Object.assign({}, base.answer_columns[3]) : { column_index: 4, q_start: 76, q_end: 100 };
+
+    c1.x = parseInt(document.getElementById('col1_x').value) || 0;
+    c1.y = parseInt(document.getElementById('col1_y').value) || 0;
+    c1.w = parseInt(document.getElementById('col1_w').value) || 0;
+    c1.h = parseInt(document.getElementById('col1_h').value) || 0;
+
+    c2.x = parseInt(document.getElementById('col2_x').value) || 0;
+    c2.y = parseInt(document.getElementById('col2_y').value) || 0;
+    c2.w = parseInt(document.getElementById('col2_w').value) || 0;
+    c2.h = parseInt(document.getElementById('col2_h').value) || 0;
+
+    c3.x = parseInt(document.getElementById('col3_x').value) || 0;
+    c3.y = parseInt(document.getElementById('col3_y').value) || 0;
+    c3.w = parseInt(document.getElementById('col3_w').value) || 0;
+    c3.h = parseInt(document.getElementById('col3_h').value) || 0;
+
+    c4.x = parseInt(document.getElementById('col4_x').value) || 0;
+    c4.y = parseInt(document.getElementById('col4_y').value) || 0;
+    c4.w = parseInt(document.getElementById('col4_w').value) || 0;
+    c4.h = parseInt(document.getElementById('col4_h').value) || 0;
+
+    base.answer_columns = [c1, c2, c3, c4];
+    return base;
 }
 
 function switchTemplate(filename) {
@@ -486,6 +762,8 @@ async function uploadSampleSheet(input) {
     const formData = new FormData();
     formData.append('sample_image', file);
     formData.append('template_filename', "{{ current_template_filename }}");
+    formData.append('width', document.getElementById('dim_width').value);
+    formData.append('height', document.getElementById('dim_height').value);
 
     try {
         const resp = await fetch("{% url 'dashboard:template_upload_sample_ajax' %}", {

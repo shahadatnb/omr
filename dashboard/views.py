@@ -829,14 +829,33 @@ def template_upload_sample_ajax(request):
         if img is None:
             return JsonResponse({'success': False, 'error': 'ছবিটি পড়া সম্ভব হয়নি। সঠিক ইমেজ ফাইল দিন।'}, status=400)
 
+        # Determine target dimensions (portrait 794x1123, landscape 1123x794, or custom)
+        target_w = 794
+        target_h = 1123
+        try:
+            if request.POST.get('width') and request.POST.get('height'):
+                target_w = int(request.POST['width'])
+                target_h = int(request.POST['height'])
+            else:
+                template_file_path = get_template_path(template_filename)
+                if template_file_path.exists():
+                    with open(template_file_path, 'r', encoding='utf-8') as tf:
+                        t_data = json.load(tf)
+                    dims = t_data.get('dimensions', {})
+                    if dims.get('width') and dims.get('height'):
+                        target_w = int(dims['width'])
+                        target_h = int(dims['height'])
+        except Exception:
+            pass
+
         # Detect corners and warp
         corners = find_corner_markers(img)
         corners_found = False
         if corners:
-            warped = warp_sheet(img, corners, output_size=(794, 1123))
+            warped = warp_sheet(img, corners, output_size=(target_w, target_h))
             corners_found = True
         else:
-            warped = cv2.resize(img, (794, 1123))
+            warped = cv2.resize(img, (target_w, target_h))
 
         # Save warped reference image
         out_filename = f"{stem}_sample.jpg"
@@ -868,6 +887,52 @@ def template_upload_sample_ajax(request):
         })
     except Exception as e:
         logger.exception("Sample upload error")
+        return JsonResponse({'success': False, 'error': f'ত্রুটি: {e}'}, status=500)
+
+
+@require_POST
+def template_rotate_sample_ajax(request):
+    """
+    Rotate the current template sample image by 90 degrees clockwise.
+    Persists the rotated image so template editor displays it correctly.
+    """
+    template_filename = request.POST.get('template_filename', 'admission_challenge_100q.json')
+    template_filename = os.path.basename(template_filename)
+    stem = os.path.splitext(template_filename)[0]
+    out_dir = settings.BASE_DIR / 'media' / 'templates'
+    sample_path = out_dir / f"{stem}_sample.jpg"
+
+    if not sample_path.exists():
+        # Fallback to general sample
+        sample_path = out_dir / 'sample_warped.jpg'
+
+    if not sample_path.exists():
+        return JsonResponse({'success': False, 'error': 'নমুনা শিট ফাইলটি পাওয়া যায়নি।'}, status=404)
+
+    try:
+        import cv2
+        import time
+        img = cv2.imread(str(sample_path))
+        if img is None:
+            return JsonResponse({'success': False, 'error': 'নমুনা শিট পড়তে ব্যর্থ হয়েছে।'}, status=400)
+
+        rotated = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+
+        target_path = out_dir / f"{stem}_sample.jpg"
+        cv2.imwrite(str(target_path), rotated)
+
+        sample_rel_url = f"/media/templates/{stem}_sample.jpg"
+        ts = int(time.time())
+
+        return JsonResponse({
+            'success': True,
+            'sample_url': f"{sample_rel_url}?v={ts}",
+            'width': rotated.shape[1],
+            'height': rotated.shape[0],
+            'message': 'নমুনা শিট সফলভাবে ৯০° ঘোরানো হয়েছে।'
+        })
+    except Exception as e:
+        logger.exception("Sample rotate error")
         return JsonResponse({'success': False, 'error': f'ত্রুটি: {e}'}, status=500)
 
 
@@ -1281,7 +1346,8 @@ def standalone_upload_single_ajax(request, exam_id):
 
     except Exception as e:
         logger.exception("Standalone processing error")
-        res_obj.error_message = str(e)
+        res_obj.roll_no = 'শনাক্ত হয়নি'
+        res_obj.error_message = f"প্রসেসিং ত্রুটি: {str(e)}"
 
     res_obj.save()
     exam.total_sheets = exam.results.count()
@@ -1369,6 +1435,49 @@ def standalone_regenerate_results_ajax(request, exam_id):
 def standalone_results(request, exam_id):
     """View merit list, tabulation, and search by roll number."""
     exam = get_object_or_404(StandaloneExam, id=exam_id)
+
+    # Auto-resolve any stuck 'Processing...' records
+    stuck_results = exam.results.filter(roll_no='Processing...')
+    if stuck_results.exists():
+        template_path = get_template_path(exam.template_name)
+        tpl_data = _get_template_data(template_path)
+        for stuck in stuck_results:
+            try:
+                if stuck.image_file and os.path.exists(stuck.image_file.path):
+                    omr_res = process_sheet(stuck.image_file.path, template_path, debug=False)
+                    if omr_res.get('success'):
+                        stuck.roll_no = omr_res.get('student_numeric_id') or 'অজ্ঞাত'
+                        stuck.exam_set = (omr_res.get('exam_set') or 'A').upper()
+                        stuck.answers_json = omr_res.get('answers', {})
+                        norm_phone = normalize_bd_phone(stuck.roll_no)
+                        if norm_phone['is_valid']:
+                            stuck.phone_number = norm_phone['local']
+                        ak = exam.get_answer_key(stuck.exam_set)
+                        if ak:
+                            score_res = calculate_score(
+                                stuck.answers_json,
+                                ak,
+                                correct_mark=exam.correct_mark,
+                                wrong_mark=exam.wrong_mark,
+                                subjects=tpl_data.get('subjects')
+                            )
+                            stuck.marks = score_res['marks']
+                            stuck.subject_marks = score_res.get('subject_marks')
+                            stuck.correct_count = score_res['correct']
+                            stuck.wrong_count = score_res['wrong']
+                            stuck.unattempted_count = score_res['unattempted']
+                        stuck.error_message = None
+                    else:
+                        stuck.roll_no = 'শনাক্ত হয়নি'
+                        stuck.error_message = omr_res.get('error', 'ওএমআর পড়তে ব্যর্থ')
+                else:
+                    stuck.roll_no = 'শনাক্ত হয়নি'
+                    stuck.error_message = 'মূল স্ক্যান ফাইলটি পাওয়া যায়নি।'
+            except Exception as ex:
+                stuck.roll_no = 'শনাক্ত হয়নি'
+                stuck.error_message = str(ex)
+            stuck.save()
+        exam.recalculate_ranks()
 
     # Auto-recalculate ranks if any unranked records exist
     if exam.results.filter(rank=0).exists():
@@ -1612,6 +1721,81 @@ def standalone_result_edit_ajax(request, result_id):
         'error_message': res.error_message,
         'message': "রোল নম্বর ও সেট সফলভাবে সংরক্ষণ ও পুনর্মূল্যায়ন করা হয়েছে।"
     })
+
+
+@require_POST
+def standalone_reprocess_result_ajax(request, result_id):
+    """
+    AJAX endpoint to re-process an individual StandaloneResult from its original scan file.
+    Solves stuck 'Processing...' or misread sheets in 1 click.
+    """
+    res = get_object_or_404(StandaloneResult, id=result_id)
+    exam = res.exam
+
+    if not res.image_file or not os.path.exists(res.image_file.path):
+        res.roll_no = 'শনাক্ত হয়নি'
+        res.error_message = 'মূল স্ক্যান ফাইলটি পাওয়া যায়নি।'
+        res.save()
+        return JsonResponse({'success': False, 'error': 'মূল স্ক্যান ফাইলটি খুঁজে পাওয়া যায়নি।'}, status=404)
+
+    template_path = get_template_path(exam.template_name)
+    tpl_data = _get_template_data(template_path)
+
+    try:
+        omr_res = process_sheet(res.image_file.path, template_path, debug=False)
+        if omr_res.get('success'):
+            res.roll_no = omr_res.get('student_numeric_id') or 'অজ্ঞাত'
+            res.exam_set = (omr_res.get('exam_set') or 'A').upper()
+            res.answers_json = omr_res.get('answers', {})
+
+            norm_phone = normalize_bd_phone(res.roll_no)
+            if norm_phone['is_valid']:
+                res.phone_number = norm_phone['local']
+
+            ak = exam.get_answer_key(res.exam_set)
+            if ak:
+                score_res = calculate_score(
+                    res.answers_json,
+                    ak,
+                    correct_mark=exam.correct_mark,
+                    wrong_mark=exam.wrong_mark,
+                    subjects=tpl_data.get('subjects')
+                )
+                res.marks = score_res['marks']
+                res.subject_marks = score_res.get('subject_marks')
+                res.correct_count = score_res['correct']
+                res.wrong_count = score_res['wrong']
+                res.unattempted_count = score_res['unattempted']
+            else:
+                res.error_message = f"Set {res.exam_set}-এর কোনো Answer Key দেওয়া হয়নি!"
+            res.error_message = None
+        else:
+            res.roll_no = 'শনাক্ত হয়নি'
+            res.error_message = omr_res.get('error', 'ওএমআর পড়তে ব্যর্থ')
+
+        res.save()
+        exam.recalculate_ranks()
+        res.refresh_from_db()
+
+        return JsonResponse({
+            'success': True,
+            'id': res.id,
+            'roll_no': res.roll_no,
+            'exam_set': res.exam_set,
+            'marks': round(res.marks, 2),
+            'correct_count': res.correct_count,
+            'wrong_count': res.wrong_count,
+            'unattempted_count': res.unattempted_count,
+            'rank': res.rank,
+            'error_message': res.error_message,
+            'message': f"শিট সফলভাবে পুনঃমূল্যায়ন করা হয়েছে (রোল: {res.roll_no}, সেট: {res.exam_set})।"
+        })
+    except Exception as e:
+        logger.exception("Error re-processing sheet")
+        res.roll_no = 'শনাক্ত হয়নি'
+        res.error_message = str(e)
+        res.save()
+        return JsonResponse({'success': False, 'error': f"পুনঃমূল্যায়নে ত্রুটি: {str(e)}"}, status=500)
 
 
 def institute_settings_view(request):

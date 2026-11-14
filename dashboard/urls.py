@@ -18,6 +18,7 @@ urlpatterns = [
     path('template-editor/', views.template_editor, name='template_editor'),
     path('template-editor/test-ajax/', views.template_test_ajax, name='template_test_ajax'),
     path('template-editor/upload-sample-ajax/', views.template_upload_sample_ajax, name='template_upload_sample_ajax'),
+    path('template-editor/rotate-sample-ajax/', views.template_rotate_sample_ajax, name='template_rotate_sample_ajax'),
 
     # AJAX Endpoints for real-time progress & appending to batches
     path('batch/create-ajax/', views.batch_create_ajax, name='batch_create_ajax'),
@@ -52,6 +53,7 @@ urlpatterns = [
     path('standalone/result/<int:result_id>/detail-ajax/', views.standalone_result_detail_ajax, name='standalone_result_detail_ajax'),
     path('standalone/result/<int:result_id>/change-set-ajax/', views.standalone_result_change_set_ajax, name='standalone_result_change_set_ajax'),
     path('standalone/result/<int:result_id>/edit-ajax/', views.standalone_result_edit_ajax, name='standalone_result_edit_ajax'),
+    path('standalone/result/<int:result_id>/reprocess-ajax/', views.standalone_reprocess_result_ajax, name='standalone_reprocess_result_ajax'),
     # Standalone SMS & Contact Routes
     path('standalone/<int:exam_id>/sms-preview-ajax/', views.standalone_sms_preview_ajax, name='standalone_sms_preview_ajax'),
     path('standalone/<int:exam_id>/send-single-sms-ajax/<int:result_id>/', views.standalone_send_single_sms_ajax, name='standalone_send_single_sms_ajax'),

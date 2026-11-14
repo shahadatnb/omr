@@ -135,7 +135,23 @@
                             {% endif %}
                         </td>
                         <td id="standalone-roll-{{ r.id }}">
-                            <strong class="font-monospace fs-5 text-primary">{{ r.roll_no }}</strong>
+                            {% if r.roll_no == 'Processing...' %}
+                                <div class="d-flex align-items-center gap-1">
+                                    <span class="badge bg-warning text-dark"><i class="fa fa-spinner fa-spin me-1"></i>প্রসেসিং...</span>
+                                    <button class="btn btn-outline-primary btn-sm py-0 px-2" onclick="reprocessStandaloneResult({{ r.id }})" title="পুনরায় মূল্যায়ন করুন">
+                                        <i class="fa fa-sync-alt"></i>
+                                    </button>
+                                </div>
+                            {% elif r.roll_no == 'শনাক্ত হয়নি' or r.roll_no == 'অজ্ঞাত' %}
+                                <div class="d-flex align-items-center gap-1">
+                                    <span class="badge bg-danger">{{ r.roll_no }}</span>
+                                    <button class="btn btn-outline-warning btn-sm py-0 px-2" onclick="reprocessStandaloneResult({{ r.id }})" title="পুনরায় ওএমআর শিট রিড করুন">
+                                        <i class="fa fa-sync-alt"></i>
+                                    </button>
+                                </div>
+                            {% else %}
+                                <strong class="font-monospace fs-5 text-primary">{{ r.roll_no }}</strong>
+                            {% endif %}
                             {% if r.student_name %}
                                 <div class="small text-muted">{{ r.student_name }}</div>
                             {% endif %}
@@ -246,23 +262,40 @@
                             <span class="badge bg-secondary fs-6" id="badgeUnattempted">ছেড়েছে: 0</span>
                         </div>
                     </div>
-                    <!-- Live Set Correction Control -->
-                    <div class="d-flex align-items-center justify-content-between border-top pt-2 flex-wrap gap-2">
-                        <div class="d-flex align-items-center gap-2">
-                            <span class="fw-bold small text-dark"><i class="fa fa-wrench text-warning me-1"></i> সেট ভুল হলে পরিবর্তন করুন:</span>
-                            <div class="input-group input-group-sm" style="width: auto;">
-                                <select class="form-select form-select-sm fw-bold text-primary" id="modalSetSelect" style="width: 100px;">
-                                    <option value="A">Set A</option>
-                                    <option value="B">Set B</option>
-                                    <option value="C">Set C</option>
-                                    <option value="D">Set D</option>
-                                </select>
-                                <button class="btn btn-warning btn-sm fw-bold" type="button" id="modalChangeSetBtn" onclick="applyModalSetChange()">
-                                    <i class="fa fa-sync-alt me-1"></i> সেট পরিবর্তন ও রি-স্কোর
-                                </button>
+                    <!-- Live Roll & Set Correction Controls -->
+                    <div class="border-top pt-2">
+                        <div class="row g-2 align-items-center">
+                            <!-- Roll Edit -->
+                            <div class="col-md-6">
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="fw-bold small text-dark text-nowrap"><i class="fa fa-id-card text-primary me-1"></i> রোল নম্বর:</span>
+                                    <div class="input-group input-group-sm">
+                                        <input type="text" class="form-control form-control-sm font-monospace fw-bold text-primary" id="modalRollInput" placeholder="রোল নম্বর" onkeydown="if(event.key==='Enter') applyModalRollChange()">
+                                        <button class="btn btn-primary btn-sm fw-bold" type="button" id="modalSaveRollBtn" onclick="applyModalRollChange()">
+                                            <i class="fa fa-save me-1"></i> রোল পরিবর্তন
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Set Edit -->
+                            <div class="col-md-6">
+                                <div class="d-flex align-items-center gap-2 justify-content-md-end">
+                                    <span class="fw-bold small text-dark text-nowrap"><i class="fa fa-wrench text-warning me-1"></i> সেট:</span>
+                                    <div class="input-group input-group-sm" style="width: auto;">
+                                        <select class="form-select form-select-sm fw-bold text-primary" id="modalSetSelect" style="width: 95px;">
+                                            <option value="A">Set A</option>
+                                            <option value="B">Set B</option>
+                                            <option value="C">Set C</option>
+                                            <option value="D">Set D</option>
+                                        </select>
+                                        <button class="btn btn-warning btn-sm fw-bold" type="button" id="modalChangeSetBtn" onclick="applyModalSetChange()">
+                                            <i class="fa fa-sync-alt me-1"></i> সেট রি-স্কোর
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div id="modalSetStatusMsg" class="small text-muted"></div>
+                        <div id="modalEditStatusMsg" class="small mt-2 text-center"></div>
                     </div>
                 </div>
 
@@ -537,7 +570,7 @@ async function loadStudentAnswers(resultId) {
     document.getElementById('modalAnswersGrid').classList.add('d-none');
     document.getElementById('modalAnswersGrid').innerHTML = '';
     document.getElementById('modalImageLink').innerHTML = '';
-    document.getElementById('modalSetStatusMsg').innerHTML = '';
+    document.getElementById('modalEditStatusMsg').innerHTML = '';
     answersModalInstance.show();
 
     try {
@@ -559,8 +592,9 @@ async function loadStudentAnswers(resultId) {
             <span class="ms-2 text-muted">মেধা ক্রম: <strong id="modalRankText">#${data.rank}</strong></span>
         `;
 
-        // Pre-select current set in the set correction select dropdown
-        document.getElementById('modalSetSelect').value = data.exam_set;
+        // Pre-select current set and populate roll in modal
+        document.getElementById('modalRollInput').value = data.roll_no || '';
+        document.getElementById('modalSetSelect').value = data.exam_set || 'A';
 
         document.getElementById('badgeCorrect').innerText = `সঠিক: ${data.correct_count}`;
         document.getElementById('badgeWrong').innerText = `ভুল: ${data.wrong_count}`;
@@ -612,12 +646,58 @@ async function loadStudentAnswers(resultId) {
     }
 }
 
+// Roll correction directly from inside the answer review modal
+async function applyModalRollChange() {
+    if (!currentModalResultId) return;
+    const newRoll = document.getElementById('modalRollInput').value.trim();
+    const currentSet = document.getElementById('modalSetSelect').value;
+    const saveBtn = document.getElementById('modalSaveRollBtn');
+    const statusMsg = document.getElementById('modalEditStatusMsg');
+
+    if (!newRoll) {
+        alert('অনুগ্রহ করে সঠিক রোল নম্বর লিখুন।');
+        return;
+    }
+
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>সংরক্ষণ হচ্ছে...`;
+    statusMsg.innerHTML = '';
+
+    try {
+        const formData = new FormData();
+        formData.append('roll_no', newRoll);
+        formData.append('exam_set', currentSet);
+
+        const resp = await fetch(`/dashboard/standalone/result/${currentModalResultId}/edit-ajax/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: formData
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+            statusMsg.innerHTML = `<span class="text-success fw-bold"><i class="fa fa-check-circle me-1"></i>${data.message || 'রোল নম্বর সফলভাবে পরিবর্তন হয়েছে!'}</span>`;
+            // Update modal header & subtitle
+            document.getElementById('answersModalTitle').innerText = `রোল নম্বর ${data.roll_no}-এর বিস্তারিত উত্তরপত্র`;
+            updateStandaloneRow(data);
+        } else {
+            statusMsg.innerHTML = `<span class="text-danger fw-bold"><i class="fa fa-exclamation-triangle me-1"></i>${data.error || 'রোল পরিবর্তন ব্যর্থ হয়েছে'}</span>`;
+        }
+    } catch (err) {
+        console.error(err);
+        statusMsg.innerHTML = `<span class="text-danger">সার্ভার এরর হয়েছে।</span>`;
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = `<i class="fa fa-save me-1"></i> রোল পরিবর্তন`;
+    }
+}
+
 // Set correction from inside the answer review modal
 async function applyModalSetChange() {
     if (!currentModalResultId) return;
     const newSet = document.getElementById('modalSetSelect').value;
     const changeBtn = document.getElementById('modalChangeSetBtn');
-    const statusMsg = document.getElementById('modalSetStatusMsg');
+    const statusMsg = document.getElementById('modalEditStatusMsg');
 
     changeBtn.disabled = true;
     changeBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>প্রসেস হচ্ছে...`;
@@ -648,8 +728,9 @@ async function applyModalSetChange() {
         statusMsg.innerHTML = `<span class="text-danger">সার্ভার এরর হয়েছে।</span>`;
     } finally {
         changeBtn.disabled = false;
-        changeBtn.innerHTML = `<i class="fa fa-sync-alt me-1"></i> সেট পরিবর্তন ও রি-স্কোর`;
+        changeBtn.innerHTML = `<i class="fa fa-sync-alt me-1"></i> সেট রি-স্কোর`;
     }
+}
 }
 
 // Quick Set Correction directly from results table dropdown
@@ -692,6 +773,17 @@ function updateStandaloneRow(data) {
         btn.innerHTML = `Set ${data.exam_set}`;
     }
 
+    const rollEl = document.getElementById(`standalone-roll-${data.id}`);
+    if (rollEl && data.roll_no) {
+        if (data.roll_no === 'Processing...') {
+            rollEl.innerHTML = `<div class="d-flex align-items-center gap-1"><span class="badge bg-warning text-dark"><i class="fa fa-spinner fa-spin me-1"></i>প্রসেসিং...</span><button class="btn btn-outline-primary btn-sm py-0 px-2" onclick="reprocessStandaloneResult(${data.id})" title="পুনরায় মূল্যায়ন করুন"><i class="fa fa-sync-alt"></i></button></div>`;
+        } else if (data.roll_no === 'শনাক্ত হয়নি' || data.roll_no === 'অজ্ঞাত') {
+            rollEl.innerHTML = `<div class="d-flex align-items-center gap-1"><span class="badge bg-danger">${data.roll_no}</span><button class="btn btn-outline-warning btn-sm py-0 px-2" onclick="reprocessStandaloneResult(${data.id})" title="পুনরায় ওএমআর শিট রিড করুন"><i class="fa fa-sync-alt"></i></button></div>`;
+        } else {
+            rollEl.innerHTML = `<strong class="font-monospace fs-5 text-primary">${data.roll_no}</strong>`;
+        }
+    }
+
     const marksEl = document.getElementById(`standalone-marks-${data.id}`);
     if (marksEl) {
         marksEl.innerText = Number(data.marks).toFixed(2);
@@ -724,6 +816,39 @@ function updateStandaloneRow(data) {
     if (row) {
         row.classList.add('table-success');
         setTimeout(() => row.classList.remove('table-success'), 1200);
+    }
+}
+
+// 1-Click Reprocess an Individual Sheet from its Original Image
+async function reprocessStandaloneResult(resultId) {
+    if (!confirm('এই ওএমআর শিটটি কি মূল স্ক্যান ফাইল থেকে পুনরায় রিড ও পুনর্মূল্যায়ন করতে চান?')) {
+        return;
+    }
+
+    const rollEl = document.getElementById(`standalone-roll-${resultId}`);
+    if (rollEl) {
+        rollEl.innerHTML = `<span class="badge bg-info"><i class="fa fa-spinner fa-spin me-1"></i>রি-প্রসেস হচ্ছে...</span>`;
+    }
+
+    try {
+        const resp = await fetch(`/dashboard/standalone/result/${resultId}/reprocess-ajax/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+            updateStandaloneRow(data);
+            alert(data.message || 'শিট সফলভাবে পুনঃমূল্যায়ন সম্পন্ন হয়েছে!');
+        } else {
+            alert(data.error || 'পুনঃমূল্যায়ন ব্যর্থ হয়েছে।');
+            if (rollEl) {
+                rollEl.innerHTML = `<div class="d-flex align-items-center gap-1"><span class="badge bg-danger">শনাক্ত হয়নি</span><button class="btn btn-outline-warning btn-sm py-0 px-2" onclick="reprocessStandaloneResult(${resultId})"><i class="fa fa-sync-alt"></i></button></div>`;
+            }
+        }
+    } catch (err) {
+        console.error(err);
+        alert('সার্ভার এরর হয়েছে।');
     }
 }
 
