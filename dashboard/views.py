@@ -10,6 +10,7 @@ from django.http import JsonResponse, HttpResponse
 from django.conf import settings
 from django.utils import timezone
 from django.views.decorators.http import require_POST
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.db.models import Q
 
 from .models import BatchJob, ScanResult, StandaloneExam, StandaloneResult, InstituteSettings, ModemSettings, SmsLog
@@ -3057,6 +3058,7 @@ def sheet_designer_view(request):
     return render(request, 'dashboard/sheet_designer.html', context)
 
 
+@xframe_options_sameorigin
 def sheet_print_view(request):
     """
     Standalone clean print view for the designed OMR sheet.

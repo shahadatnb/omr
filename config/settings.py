@@ -141,3 +141,6 @@ OMR_OUTPUT_SIZE = (794, 1123)  # A4 resolution (pixels)
 DATA_UPLOAD_MAX_NUMBER_FILES = 10000          # Allow up to 10,000 files in a single request
 DATA_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024 * 1024  # 1 GB max request payload
 FILE_UPLOAD_MAX_MEMORY_SIZE = 500 * 1024 * 1024   # 500 MB max in-memory file size
+
+# Allow embedding internal views (like sheet print preview) within iframes
+X_FRAME_OPTIONS = 'SAMEORIGIN'
