@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OMR Sheet Print</title>
+    <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        /* PAGE SETUP FOR A4 PRINTING */
+        @page {
+            size: A4 portrait;
+            margin: 0;
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: #e9ecef;
+            font-family: 'Hind Siliguri', 'Roboto', sans-serif;
+            display: flex;
+            justify-content: center;
+        }
+
+        /* 1:1.414 Standard A4 Sheet Box */
+        .sheet-page {
+            width: 210mm;
+            min-height: 297mm;
+            height: 297mm;
+            padding: 8mm 9mm 8mm 9mm;
+            background: #ffffff;
+            position: relative;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            overflow: hidden;
+        }
+
+        /* 4 CORNER MARKERS (SOLID BLACK SQUARES FOR OPENCV WARPING) */
+        .corner-sq {
+            position: absolute;
+            width: 8mm;
+            height: 8mm;
+            background-color: #000000 !important;
+            z-index: 100;
+        }
+        .corner-sq.tl { top: 4mm; left: 4mm; }
+        .corner-sq.tr { top: 4mm; right: 4mm; }
+        .corner-sq.bl { bottom: 4mm; left: 4mm; }
+        .corner-sq.br { bottom: 4mm; right: 4mm; }
+
+        /* TIMING TRACK (LEFT SIDE DECORATIVE TICKS) */
+        .timing-track {
+            position: absolute;
+            left: 5mm;
+            top: 25mm;
+            bottom: 25mm;
+            width: 3mm;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .timing-tick {
+            width: 3mm;
+            height: 1.5mm;
+            background-color: #000000;
+        }
+
+        /* THEME COLORS (DYNAMIC CSS VARIABLES) */
+        :root {
+            --omr-primary: #d32f2f;      /* Classic Admission Challenge Red */
+            --omr-light: #ffebee;
+            --omr-dark: #b71c1c;
+            --omr-border: #ef9a9a;
+            --omr-text: #212529;
+            --bubble-size: 4.2mm;
+        }
+
+        .theme-black {
+            --omr-primary: #212529;
+            --omr-light: #f8f9fa;
+            --omr-dark: #000000;
+            --omr-border: #ced4da;
+            --omr-text: #000000;
+        }
+
+        .theme-blue {
+            --omr-primary: #1565c0;
+            --omr-light: #e3f2fd;
+            --omr-dark: #0d47a1;
+            --omr-border: #90caf9;
+            --omr-text: #212529;
+        }
+
+        .theme-green {
+            --omr-primary: #2e7d32;
+            --omr-light: #e8f5e9;
+            --omr-dark: #1b5e20;
+            --omr-border: #a5d6a7;
+            --omr-text: #212529;
+        }
+
+        /* HEADER AREA */
+        .header-section {
+            border-bottom: 1.5px solid var(--omr-primary);
+            padding-bottom: 2mm;
+            margin-bottom: 2mm;
+            text-align: center;
+        }
+        .inst-logo {
+            max-height: 14mm;
+            margin-bottom: 1mm;
+        }
+        .inst-title {
+            font-size: 20pt;
+            font-weight: 700;
+            color: var(--omr-primary);
+            margin: 0;
+            line-height: 1.1;
+            letter-spacing: 0.5px;
+        }
+        .inst-tagline {
+            font-size: 10pt;
+            font-weight: 600;
+            color: #495057;
+            margin: 1mm 0 0 0;
+        }
+        .exam-banner {
+            font-size: 11pt;
+            font-weight: 700;
+            background-color: var(--omr-primary);
+            color: #ffffff !important;
+            padding: 1mm 4mm;
+            border-radius: 2mm;
+            display: inline-block;
+            margin-top: 1.5mm;
+        }
+
+        /* STUDENT INFO & INSTRUCTIONS */
+        .mid-info-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 3mm;
+            margin-bottom: 2.5mm;
+        }
+        .info-box {
+            border: 1px solid var(--omr-border);
+            border-radius: 1.5mm;
+            padding: 2mm;
+            font-size: 8.5pt;
+        }
+        .info-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1.5mm;
+        }
+        .info-label {
+            font-weight: 600;
+            color: var(--omr-dark);
+            width: 32mm;
+            flex-shrink: 0;
+        }
+        .info-line {
+            border-bottom: 1px dotted #6c757d;
+            flex-grow: 1;
+            height: 4mm;
+        }
+
+        /* ROLL GRID & SET BLOCK */
+        .id-and-set-container {
+            display: flex;
+            gap: 4mm;
+            justify-content: flex-end;
+            align-items: stretch;
+        }
+
+        .roll-grid-card, .set-grid-card {
+            border: 1.5px solid var(--omr-primary);
+            border-radius: 1.5mm;
+            background: #ffffff;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .grid-header {
+            background-color: var(--omr-primary);
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 9pt;
+            text-align: center;
+            padding: 0.8mm;
+        }
+        .writein-boxes {
+            display: flex;
+            border-bottom: 1.5px solid var(--omr-primary);
+        }
+        .writein-box {
+            width: var(--bubble-size);
+            height: 5mm;
+            border-right: 1px solid var(--omr-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Roboto', sans-serif;
+            font-weight: bold;
+            font-size: 8pt;
+        }
+        .writein-box:last-child { border-right: none; }
+
+        .bubble-grid-matrix {
+            padding: 1mm;
+            display: flex;
+            gap: 1mm;
+            justify-content: center;
+        }
+        .matrix-col {
+            display: flex;
+            flex-direction: column;
+            gap: 1mm;
+        }
+
+        /* BUBBLE SHAPE */
+        .bubble {
+            width: var(--bubble-size);
+            height: var(--bubble-size);
+            border: 1px solid var(--omr-primary);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Roboto', sans-serif;
+            font-size: 7pt;
+            font-weight: 700;
+            color: var(--omr-primary);
+            user-select: none;
+            background: #ffffff;
+            line-height: 1;
+        }
+
+        /* INSTRUCTIONS CARD */
+        .instructions-card {
+            border: 1px dashed var(--omr-primary);
+            border-radius: 1.5mm;
+            padding: 1.5mm 2mm;
+            background: var(--omr-light);
+            font-size: 8pt;
+            line-height: 1.25;
+        }
+        .instructions-card strong { color: var(--omr-dark); }
+        .instructions-card ol {
+            margin: 1mm 0 0 0;
+            padding-left: 4.5mm;
+        }
+
+        /* QUESTIONS COLUMNS */
+        .questions-area {
+            display: flex;
+            gap: 2.5mm;
+            flex-grow: 1;
+            margin-bottom: 2mm;
+        }
+        .q-column {
+            flex: 1;
+            border: 1px solid var(--omr-border);
+            border-radius: 1.5mm;
+            overflow: hidden;
+            background: #ffffff;
+            display: flex;
+            flex-direction: column;
+        }
+        .col-subject-header {
+            background-color: var(--omr-primary);
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 9pt;
+            text-align: center;
+            padding: 1mm;
+        }
+        .q-list {
+            padding: 1mm 1.5mm;
+            display: flex;
+            flex-direction: column;
+            gap: 0.8mm;
+            flex-grow: 1;
+            justify-content: space-around;
+        }
+        .q-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.3mm 0;
+            border-bottom: 0.5px dotted #e9ecef;
+        }
+        .q-row:last-child { border-bottom: none; }
+        .q-num {
+            font-family: 'Roboto', sans-serif;
+            font-size: 7.5pt;
+            font-weight: 700;
+            color: #343a40;
+            width: 5.5mm;
+            text-align: right;
+            padding-right: 1mm;
+        }
+        .q-bubbles {
+            display: flex;
+            gap: 1.2mm;
+        }
+
+        /* FOOTER AREA */
+        .sheet-footer {
+            border-top: 1.5px solid var(--omr-primary);
+            padding-top: 2mm;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            font-size: 8pt;
+            color: #495057;
+        }
+        .sig-box {
+            width: 45mm;
+            text-align: center;
+            border-top: 1px solid #212529;
+            padding-top: 1mm;
+            font-weight: 600;
+            font-size: 8pt;
+        }
+
+        /* PRINT STYLING */
+        @media print {
+            body {
+                background: none;
+                margin: 0;
+            }
+            .sheet-page {
+                box-shadow: none;
+                width: 100vw;
+                height: 100vh;
+                margin: 0;
+            }
+            .no-print {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body class="theme-red" id="sheetBody">
+
+    <!-- A4 PRINTABLE OMR SHEET CONTAINER -->
+    <div class="sheet-page" id="printableSheet">
+
+        <!-- 4 HIGH-CONTRAST CORNER MARKERS FOR OPENCV ALIGNMENT -->
+        <div class="corner-sq tl"></div>
+        <div class="corner-sq tr"></div>
+        <div class="corner-sq bl"></div>
+        <div class="corner-sq br"></div>
+
+        <!-- TIMING TRACK TICKS -->
+        <div class="timing-track" id="timingTrack">
+            <!-- Dynamically generated ticks -->
+        </div>
+
+        <div>
+            <!-- HEADER -->
+            <div class="header-section">
+                {% if inst_settings.logo %}
+                    <img src="{{ inst_settings.logo.url }}" alt="Logo" class="inst-logo" id="sheetLogo">
+                {% endif %}
+                <h1 class="inst-title" id="dispTitle">{{ inst_settings.institute_name|default:"Admission Challenge" }}</h1>
+                <p class="inst-tagline" id="dispTagline">{{ inst_settings.tagline|default:"বিশ্ববিদ্যালয় ভর্তি কোচিং" }}</p>
+                <div>
+                    <span class="exam-banner" id="dispExamName">মডেল টেস্ট ওএমআর মূল্যায়ন শিট</span>
+                </div>
+            </div>
+
+            <!-- MID ROW: CANDIDATE INFO + INSTRUCTIONS + ROLL & SET GRID -->
+            <div class="mid-info-grid">
+                <!-- LEFT: STUDENT FILL-IN FIELDS & INSTRUCTIONS -->
+                <div>
+                    <div class="info-box mb-2">
+                        <div class="info-row">
+                            <span class="info-label">শিক্ষার্থীর নাম (Name):</span>
+                            <div class="info-line"></div>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">পরীক্ষার তারিখ (Date):</span>
+                            <div class="info-line"></div>
+                        </div>
+                        <div class="info-row" style="margin-bottom: 0;">
+                            <span class="info-label">কক্ষ নং (Room No):</span>
+                            <div class="info-line"></div>
+                        </div>
+                    </div>
+
+                    <div class="instructions-card">
+                        <strong><i class="fa fa-info-circle"></i> সাধারণ নির্দেশনাবলী:</strong>
+                        <ol>
+                            <li>শুধুমাত্র <strong>কালো কালির বলপয়েন্ট কলম</strong> ব্যবহার করুন।</li>
+                            <li>বৃত্তটি এমনভাবে ভরাট করুন যেন ভেতরের অক্ষরটি দেখা না যায়।</li>
+                            <li>কোনো অবস্থাতেই ওএমআর শিট ভাঁজ বা কাটাকাটি করবেন না।</li>
+                            <li>এক প্রশ্নের উত্তরে একের অধিক বৃত্ত ভরাট করলে উত্তরটি বাতিল বলে গণ্য হবে।</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- RIGHT: SET CODE & ROLL NUMBER GRID -->
+                <div class="id-and-set-container">
+                    <!-- SET CODE GRID -->
+                    <div class="set-grid-card" id="setGridContainer">
+                        <div class="grid-header">সেট কোড</div>
+                        <div class="writein-boxes">
+                            <div class="writein-box" style="width: 100%;"></div>
+                        </div>
+                        <div class="bubble-grid-matrix" style="flex-direction: column;" id="setBubblesList">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <!-- ROLL NUMBER GRID -->
+                    <div class="roll-grid-card" id="rollGridContainer">
+                        <div class="grid-header">রোল নম্বর (Roll No)</div>
+                        <div class="writein-boxes" id="rollWriteinBoxes">
+                            <!-- Populated dynamically -->
+                        </div>
+                        <div class="bubble-grid-matrix" id="rollMatrixColumns">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ANSWER QUESTIONS AREA (DYNAMIC COLUMNS) -->
+        <div class="questions-area" id="questionsContainer">
+            <!-- Populated dynamically with question bubbles -->
+        </div>
+
+        <!-- FOOTER -->
+        <div class="sheet-footer">
+            <div class="sig-box">
+                পরীক্ষার্থীর পূর্ণ স্বাক্ষর
+            </div>
+            <div style="text-align: center; font-size: 7.5pt; color: #6c757d;">
+                OMR Engine System Generated &bull; Do Not Fold Or Smudge
+            </div>
+            <div class="sig-box">
+                কক্ষ পরিদর্শকের স্বাক্ষর
+            </div>
+        </div>
+
+    </div>
+
+    <!-- JAVASCRIPT FOR CONFIGURING & POPULATING -->
+    <script>
+    // Sheet Config loaded from URL params or parent window
+    const urlParams = new URLSearchParams(window.location.search);
+    const config = {
+        title: urlParams.get('title') || 'Admission Challenge',
+        tagline: urlParams.get('tagline') || 'বিশ্ববিদ্যালয় ভর্তি কোচিং',
+        examName: urlParams.get('examName') || 'মডেল টেস্ট ওএমআর শিট',
+        theme: urlParams.get('theme') || 'theme-red',
+        totalQuestions: parseInt(urlParams.get('qCount') || '100'),
+        columnsCount: parseInt(urlParams.get('cols') || '4'),
+        optionsCount: parseInt(urlParams.get('opts') || '4'),
+        rollDigits: parseInt(urlParams.get('rollDigits') || '6'),
+        setCount: parseInt(urlParams.get('sets') || '4'),
+        subjects: (urlParams.get('subjects') || 'কলাম ১,কলাম ২,কলাম ৩,কলাম ৪').split(','),
+        autoprint: urlParams.get('autoprint') === '1'
+    };
+
+    function renderSheet() {
+        // 1. Theme
+        document.body.className = config.theme;
+
+        // 2. Text
+        document.getElementById('dispTitle').innerText = config.title;
+        document.getElementById('dispTagline').innerText = config.tagline;
+        document.getElementById('dispExamName').innerText = config.examName;
+
+        // 3. Timing ticks
+        const timingTrack = document.getElementById('timingTrack');
+        timingTrack.innerHTML = '';
+        for (let i = 0; i < 40; i++) {
+            const tick = document.createElement('div');
+            tick.className = 'timing-tick';
+            timingTrack.appendChild(tick);
+        }
+
+        // 4. Set Code Grid
+        const setBubblesList = document.getElementById('setBubblesList');
+        setBubblesList.innerHTML = '';
+        const setLetters = ['ক', 'খ', 'গ', 'ঘ', 'ঙ'];
+        const setLettersEn = ['A', 'B', 'C', 'D', 'E'];
+        for (let s = 0; s < config.setCount; s++) {
+            const b = document.createElement('div');
+            b.className = 'bubble';
+            b.innerText = setLettersEn[s] || String.fromCharCode(65 + s);
+            setBubblesList.appendChild(b);
+        }
+
+        // 5. Roll Grid
+        const rollWritein = document.getElementById('rollWriteinBoxes');
+        const rollMatrix = document.getElementById('rollMatrixColumns');
+        rollWritein.innerHTML = '';
+        rollMatrix.innerHTML = '';
+
+        for (let c = 0; c < config.rollDigits; c++) {
+            const wb = document.createElement('div');
+            wb.className = 'writein-box';
+            rollWritein.appendChild(wb);
+
+            const col = document.createElement('div');
+            col.className = 'matrix-col';
+            for (let r = 0; r <= 9; r++) {
+                const b = document.createElement('div');
+                b.className = 'bubble';
+                b.innerText = r;
+                col.appendChild(b);
+            }
+            rollMatrix.appendChild(col);
+        }
+
+        // 6. Answer Columns
+        const qContainer = document.getElementById('questionsContainer');
+        qContainer.innerHTML = '';
+
+        const totalQ = config.totalQuestions;
+        const numCols = config.columnsCount;
+        const qPerCol = Math.ceil(totalQ / numCols);
+        const optLetters = ['A', 'B', 'C', 'D', 'E'];
+
+        let currentQ = 1;
+        for (let c = 0; c < numCols; c++) {
+            const startQ = currentQ;
+            const endQ = Math.min(startQ + qPerCol - 1, totalQ);
+            currentQ = endQ + 1;
+
+            const colDiv = document.createElement('div');
+            colDiv.className = 'q-column';
+
+            const header = document.createElement('div');
+            header.className = 'col-subject-header';
+            header.innerText = config.subjects[c] || `কলাম ${c + 1} (${startQ} - ${endQ})`;
+            colDiv.appendChild(header);
+
+            const qList = document.createElement('div');
+            qList.className = 'q-list';
+
+            for (let q = startQ; q <= endQ; q++) {
+                const row = document.createElement('div');
+                row.className = 'q-row';
+
+                const qNum = document.createElement('div');
+                qNum.className = 'q-num';
+                qNum.innerText = q;
+                row.appendChild(qNum);
+
+                const bubbles = document.createElement('div');
+                bubbles.className = 'q-bubbles';
+                for (let o = 0; o < config.optionsCount; o++) {
+                    const b = document.createElement('div');
+                    b.className = 'bubble';
+                    b.innerText = optLetters[o];
+                    bubbles.appendChild(b);
+                }
+                row.appendChild(bubbles);
+                qList.appendChild(row);
+            }
+
+            colDiv.appendChild(qList);
+            qContainer.appendChild(colDiv);
+        }
+
+        if (config.autoprint) {
+            setTimeout(() => {
+                window.print();
+            }, 600);
+        }
+    }
+
+    // Listen for live config postMessage from the interactive Designer
+    window.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'UPDATE_OMR_CONFIG') {
+            Object.assign(config, event.data.config);
+            renderSheet();
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', renderSheet);
+    </script>
+</body>
+</html>

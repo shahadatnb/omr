@@ -22,6 +22,11 @@ urlpatterns = [
     path('template-editor/autodetect-ajax/', views.template_autodetect_ajax, name='template_autodetect_ajax'),
     path('template-editor/delete-ajax/', views.template_delete_ajax, name='template_delete_ajax'),
 
+    # OMR Sheet Designer & Print-ready Generator routes
+    path('sheet-designer/', views.sheet_designer_view, name='sheet_designer'),
+    path('sheet-designer/print/', views.sheet_print_view, name='sheet_print'),
+    path('sheet-designer/save-template-ajax/', views.sheet_designer_save_template_ajax, name='sheet_designer_save_template_ajax'),
+
     # AJAX Endpoints for real-time progress & appending to batches
     path('batch/create-ajax/', views.batch_create_ajax, name='batch_create_ajax'),
     path('batch/<int:batch_id>/upload-single-ajax/', views.upload_single_ajax, name='upload_single_ajax'),

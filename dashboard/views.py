@@ -1,4 +1,6 @@
 import os
+import re
+import time
 import json
 import logging
 from pathlib import Path
@@ -3035,6 +3037,87 @@ def sms_clear_history_ajax(request):
     else:
         count, _ = SmsLog.objects.all().delete()
     return JsonResponse({'success': True, 'message': f'মোট {count}টি হিস্ট্রি লগ মুছে ফেলা হয়েছে।'})
+
+
+# ==============================================================================
+# OMR SHEET DESIGNER & PRINT-READY PDF GENERATOR
+# ==============================================================================
+def sheet_designer_view(request):
+    """
+    Visual OMR Sheet Designer & Generator.
+    Lets users design custom A4 OMR sheets for printing (offset press / office printer),
+    with live preview, export to printable PDF, and auto-sync evaluation template.
+    """
+    inst_settings = InstituteSettings.get_settings()
+    context = {
+        'inst_settings': inst_settings,
+        'default_title': inst_settings.institute_name or 'Admission Challenge',
+        'default_tagline': inst_settings.tagline or 'বিশ্ববিদ্যালয় ভর্তি কোচিং',
+    }
+    return render(request, 'dashboard/sheet_designer.html', context)
+
+
+def sheet_print_view(request):
+    """
+    Standalone clean print view for the designed OMR sheet.
+    Rendered with precise A4 dimensions, corner alignment squares, and clean styling.
+    """
+    inst_settings = InstituteSettings.get_settings()
+    context = {
+        'inst_settings': inst_settings,
+        'autoprint': request.GET.get('autoprint', '0') == '1',
+    }
+    return render(request, 'dashboard/sheet_print.html', context)
+
+
+@require_POST
+def sheet_designer_save_template_ajax(request):
+    """
+    Saves the designed OMR sheet's coordinate specification into templates_store/
+    so the OMR Engine can immediately evaluate sheets printed from this design.
+    """
+    try:
+        data = json.loads(request.body)
+        raw_name = data.get('template_name', '').strip() or 'custom_omr_sheet'
+        # Sanitize filename
+        safe_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', raw_name).strip('_').lower()
+        if not safe_name:
+            safe_name = f"omr_sheet_{int(time.time())}"
+        if not safe_name.endswith('.json'):
+            safe_name += '.json'
+
+        template_payload = {
+            "name": data.get('title', 'Custom Designed OMR Sheet'),
+            "version": "1.0",
+            "dimensions": data.get('dimensions', {"width": 794, "height": 1123}),
+            "orientation": "portrait",
+            "corner_markers": {
+                "min_area": 100,
+                "max_area": 10000,
+                "aspect_tolerance": 0.4
+            },
+            "id_grid": data.get('id_grid'),
+            "set_region": data.get('set_region'),
+            "answer_columns": data.get('answer_columns', [])
+        }
+
+        templates_dir = Path(settings.BASE_DIR) / 'templates_store'
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        target_path = templates_dir / safe_name
+
+        with open(target_path, 'w', encoding='utf-8') as f:
+            json.dump(template_payload, f, indent=2, ensure_ascii=False)
+
+        logger.info(f"Custom OMR template saved: {target_path}")
+        return JsonResponse({
+            'success': True,
+            'template_name': safe_name,
+            'message': f"ওএমআর টেমপ্লেট '{safe_name}' সফলভাবে সংরক্ষিত হয়েছে! নতুন পরীক্ষার তালিকায় এটি এখনই ব্যবহার করা যাবে।"
+        })
+    except Exception as e:
+        logger.exception("Failed to save custom OMR template")
+        return JsonResponse({'success': False, 'error': f"টেমপ্লেট সেভ ত্রুটি: {str(e)}"}, status=500)
+
 
 
 
