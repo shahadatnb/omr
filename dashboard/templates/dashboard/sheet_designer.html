@@ -4,36 +4,37 @@
 
 {% block extra_css %}
 <style>
-    /* DESIGNER WORKSPACE */
+    /* WORKSPACE SPLIT */
     .designer-panel {
         max-height: calc(100vh - 110px);
         overflow-y: auto;
     }
 
-    /* PREVIEW VIEWPORT (DARK CANVAS BOARD) */
+    /* DARK DRAFTING BOARD VIEWPORT */
     .sheet-viewport {
-        background-color: #2b3035;
-        border-radius: 10px;
-        padding: 24px 16px;
+        background-color: #1e2227;
+        border-radius: 8px;
+        padding: 24px;
         display: flex;
         justify-content: center;
         align-items: flex-start;
-        overflow-x: auto;
-        overflow-y: auto;
+        overflow: auto;
         min-height: calc(100vh - 120px);
         max-height: calc(100vh - 120px);
-        box-shadow: inset 0 2px 8px rgba(0,0,0,0.4);
+        box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
     }
 
-    /* SCALABLE WRAPPER TO PREVENT EMPTY CORNER MARGINS */
+    /* SCALED WRAPPER (CENTERED, EXACT SCALED BOUNDING BOX) */
     .sheet-zoom-wrapper {
         margin: 0 auto;
         display: block;
-        transition: width 0.15s ease, height 0.15s ease;
         position: relative;
+        box-shadow: 0 14px 40px rgba(0,0,0,0.6);
+        background: #ffffff;
+        transition: width 0.15s ease, height 0.15s ease;
     }
 
-    /* REAL A4 SHEET (794px x 1123px at 96 DPI) */
+    /* REAL A4 SHEET CANVAS (794px x 1123px at 96 DPI) */
     .omr-a4-canvas {
         width: 794px;
         height: 1123px;
@@ -41,76 +42,75 @@
         position: absolute;
         top: 0;
         left: 0;
-        box-shadow: 0 12px 36px rgba(0,0,0,0.6);
-        border-radius: 2px;
-        transform-origin: top left;
+        transform-origin: 0 0;
         overflow: hidden;
         user-select: none;
+        -webkit-user-select: none;
     }
 
-    /* 4 SOLID BLACK ALIGNMENT CORNER SQUARES */
+    /* 4 CORNER ALIGNMENT SQUARES FOR OPENCV */
     .corner-marker {
         position: absolute;
-        width: 30px;
-        height: 30px;
+        width: 26px;
+        height: 26px;
         background: #000000;
-        z-index: 50;
+        z-index: 100;
     }
-    .corner-marker.tl { top: 14px; left: 14px; }
-    .corner-marker.tr { top: 14px; right: 14px; }
-    .corner-marker.bl { bottom: 14px; left: 14px; }
-    .corner-marker.br { bottom: 14px; right: 14px; }
+    .corner-marker.tl { top: 16px; left: 16px; }
+    .corner-marker.tr { top: 16px; right: 16px; }
+    .corner-marker.bl { bottom: 16px; left: 16px; }
+    .corner-marker.br { bottom: 16px; right: 16px; }
 
-    /* TIMING TRACK ALONG LEFT EDGE */
+    /* TIMING TICKS ON LEFT EDGE */
     .timing-bar-track {
         position: absolute;
         left: 18px;
-        top: 90px;
-        bottom: 90px;
-        width: 12px;
+        top: 60px;
+        bottom: 60px;
+        width: 8px;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
         pointer-events: none;
-        z-index: 40;
+        z-index: 90;
     }
     .timing-tick-mark {
-        width: 12px;
-        height: 6px;
+        width: 8px;
+        height: 4px;
         background: #000000;
     }
 
-    /* DRAGGABLE & SELECTABLE BLOCKS */
+    /* DRAGGABLE BLOCKS */
     .designer-block {
         position: absolute;
         cursor: grab;
-        border: 1.5px dashed transparent;
+        border: 1.5px dashed rgba(13, 110, 253, 0.25);
         border-radius: 4px;
-        background: rgba(255, 255, 255, 0.95);
-        transition: border-color 0.1s, box-shadow 0.1s;
-        z-index: 10;
+        background: #ffffff;
         box-sizing: border-box;
+        z-index: 10;
+        transition: border-color 0.1s, box-shadow 0.1s;
     }
     .designer-block:hover {
-        border-color: #0d6efd;
-        background: rgba(255, 255, 255, 1);
+        border-color: #0d6efd !important;
+        box-shadow: 0 2px 8px rgba(13, 110, 253, 0.2);
     }
     .designer-block.active-block {
         border: 2px solid #0d6efd !important;
-        box-shadow: 0 0 12px rgba(13, 110, 253, 0.35);
+        box-shadow: 0 0 12px rgba(13, 110, 253, 0.4) !important;
         z-index: 30 !important;
     }
     .designer-block.dragging {
         cursor: grabbing !important;
-        opacity: 0.92;
+        opacity: 0.94;
         box-shadow: 0 8px 24px rgba(0,0,0,0.3) !important;
     }
 
-    /* DRAG HANDLE BADGE */
-    .block-drag-handle {
+    /* FLOATING PILL FOR ACTIVE BLOCK */
+    .block-drag-pill {
         position: absolute;
         top: -14px;
-        left: 8px;
+        left: 6px;
         background: #0d6efd;
         color: #ffffff;
         font-size: 10px;
@@ -121,8 +121,9 @@
         pointer-events: none;
         white-space: nowrap;
         z-index: 35;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
     }
-    .designer-block.active-block .block-drag-handle {
+    .designer-block.active-block .block-drag-pill {
         display: block;
     }
 
@@ -156,195 +157,207 @@
         --omr-text: #212529;
     }
 
-    /* INNER BLOCK STYLING */
-    .block-inner-content {
+    /* BLOCK INNER STYLING */
+    .block-content-box {
         width: 100%;
         height: 100%;
         overflow: hidden;
-        pointer-events: none; /* Let drag events hit block container */
+        pointer-events: none;
+        display: flex;
+        flex-direction: column;
     }
 
-    .inst-header-content {
+    /* HEADER */
+    .hdr-content {
         text-align: center;
         border-bottom: 2px solid var(--omr-primary);
-        padding-bottom: 6px;
+        padding-bottom: 4px;
     }
-    .inst-main-title {
-        font-size: 24px;
+    .hdr-title {
+        font-size: 22px;
         font-weight: 700;
         color: var(--omr-primary);
         margin: 0;
         line-height: 1.1;
     }
-    .inst-sub-title {
-        font-size: 13px;
+    .hdr-tagline {
+        font-size: 12px;
         font-weight: 600;
         color: #495057;
         margin: 2px 0 0 0;
     }
-    .inst-banner-pill {
+    .hdr-pill {
         display: inline-block;
         background: var(--omr-primary);
         color: #ffffff;
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 700;
-        padding: 3px 14px;
+        padding: 2px 12px;
         border-radius: 4px;
-        margin-top: 4px;
+        margin-top: 3px;
     }
 
-    /* STUDENT INFO & INSTRUCTIONS */
-    .info-container-box {
+    /* CANDIDATE INFO */
+    .info-border-box {
         border: 1px solid var(--omr-border);
-        border-radius: 5px;
-        padding: 8px 10px;
+        border-radius: 4px;
+        padding: 6px 10px;
         height: 100%;
-        font-size: 12px;
+        font-size: 11px;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
     }
-    .info-line-row {
+    .info-item-row {
         display: flex;
         align-items: center;
-        margin-bottom: 6px;
+        margin-bottom: 4px;
     }
-    .info-lbl {
+    .info-lbl-txt {
         font-weight: 700;
         color: var(--omr-dark);
-        width: 120px;
+        width: 110px;
         flex-shrink: 0;
     }
-    .info-dotted-line {
-        border-bottom: 1.5px dotted #6c757d;
+    .info-dots-line {
+        border-bottom: 1px dotted #6c757d;
         flex-grow: 1;
-        height: 16px;
+        height: 12px;
     }
 
-    /* ROLL & SET GRIDS */
-    .grid-card-border {
+    /* CARDS FOR ROLL & SET */
+    .grid-styled-card {
         border: 1.5px solid var(--omr-primary);
-        border-radius: 5px;
+        border-radius: 4px;
         height: 100%;
         display: flex;
         flex-direction: column;
         overflow: hidden;
         background: #ffffff;
     }
-    .grid-hdr {
+    .card-top-header {
         background: var(--omr-primary);
         color: #ffffff;
         font-weight: 700;
-        font-size: 12px;
+        font-size: 11px;
         text-align: center;
-        padding: 3px 0;
+        padding: 2px 0;
+        line-height: 1.2;
     }
-    .writein-cell {
-        height: 22px;
+    .write-box-cell {
+        height: 20px;
         border-right: 1px solid var(--omr-border);
         display: flex;
         align-items: center;
         justify-content: center;
         font-weight: bold;
-        font-size: 12px;
+        font-size: 11px;
         font-family: 'Roboto', sans-serif;
     }
-    .writein-cell:last-child { border-right: none; }
+    .write-box-cell:last-child { border-right: none; }
 
-    /* BUBBLES */
-    .omr-bubble {
-        width: 16px;
-        height: 16px;
-        border: 1.2px solid var(--omr-primary);
+    /* CIRCULAR OMR BUBBLE */
+    .omr-bubble-circle {
+        width: 14px;
+        height: 14px;
+        min-width: 14px;
+        min-height: 14px;
+        border: 1px solid var(--omr-primary);
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 9px;
+        font-size: 8px;
         font-weight: 700;
         color: var(--omr-primary);
         background: #ffffff;
-        font-family: 'Roboto', sans-serif;
+        font-family: 'Roboto', Arial, sans-serif;
+        line-height: 1;
+        flex-shrink: 0 !important;
+        box-sizing: border-box !important;
     }
 
     /* QUESTIONS COLUMNS */
-    .questions-wrapper {
+    .columns-flex-container {
         display: flex;
-        gap: 8px;
+        gap: 6px;
         height: 100%;
     }
-    .q-col-card {
+    .col-q-card {
         flex: 1;
         border: 1px solid var(--omr-border);
-        border-radius: 5px;
+        border-radius: 4px;
         display: flex;
         flex-direction: column;
         overflow: hidden;
         background: #ffffff;
     }
-    .q-col-hdr {
+    .col-q-header {
         background: var(--omr-primary);
         color: #ffffff;
         font-weight: 700;
         font-size: 11px;
         text-align: center;
-        padding: 3px 0;
+        padding: 2px 0;
     }
-    .q-list-rows {
-        padding: 4px;
+    .col-q-rows-list {
+        padding: 2px 4px;
         display: flex;
         flex-direction: column;
-        justify-content: space-around;
+        justify-content: space-evenly;
         flex-grow: 1;
     }
-    .q-item-row {
+    .q-single-row {
         display: flex;
         align-items: center;
         justify-content: space-between;
         padding: 1px 0;
         border-bottom: 0.5px dotted #f1f3f5;
+        line-height: 1;
     }
-    .q-item-row:last-child { border-bottom: none; }
-    .q-label-no {
+    .q-single-row:last-child { border-bottom: none; }
+    .q-index-num {
         font-weight: 700;
-        font-size: 10px;
+        font-size: 9.5px;
         color: #495057;
-        width: 22px;
+        width: 20px;
         text-align: right;
-        padding-right: 3px;
+        padding-right: 2px;
         font-family: 'Roboto', sans-serif;
     }
 
     /* FOOTER */
-    .footer-container {
+    .footer-flex-row {
         border-top: 1.5px solid var(--omr-primary);
-        padding-top: 4px;
+        padding-top: 3px;
         display: flex;
         justify-content: space-between;
         align-items: flex-end;
         height: 100%;
-        font-size: 11px;
+        font-size: 10.5px;
+        padding-left: 10px;
+        padding-right: 10px;
     }
-    .sig-line-box {
-        width: 180px;
+    .signature-area-box {
+        width: 170px;
         border-top: 1px solid #212529;
         text-align: center;
-        padding-top: 3px;
+        padding-top: 2px;
         font-weight: 600;
     }
 
-    .color-swatch-btn {
+    .theme-pill-btn {
         cursor: pointer;
-        border: 2px solid #dee2e6;
-        padding: 5px 12px;
-        border-radius: 6px;
+        border: 1.5px solid #dee2e6;
+        padding: 4px 10px;
+        border-radius: 5px;
         display: inline-flex;
         align-items: center;
         font-weight: 600;
-        font-size: 12px;
+        font-size: 11.5px;
         background: #fff;
     }
-    .color-swatch-btn.active {
+    .theme-pill-btn.active {
         border-color: #0d6efd;
         background-color: #e7f1ff;
     }
@@ -357,9 +370,21 @@
         <h4 class="fw-bold mb-0">
             <i class="fa fa-print text-primary me-2"></i>ওএমআর শিট ডিজাইনার ও প্রিন্ট জেনারেটর
         </h4>
-        <small class="text-muted">টেমপ্লেট এডিটরের মত যেকোনো ব্লক ড্র্যাগ অ্যান্ড ড্রপ করে সাজান এবং প্রেসে প্রিন্টের জন্য ভেক্টর PDF ডাউনলোড করুন</small>
+        <small class="text-muted">ব্লকগুলো সরাসরি মাউস দিয়ে ড্র্যাগ করে সাজান অথবা দ্রুত প্রিসেট থেকে পছন্দ করুন। প্রেসে প্রিন্টের জন্য ভেক্টর PDF ডাউনলোড করুন।</small>
     </div>
     <div class="d-flex gap-2 align-items-center">
+        <!-- LAYOUT PRESET DROPDOWN -->
+        <div class="dropdown">
+            <button class="btn btn-outline-secondary dropdown-toggle btn-sm fw-bold" type="button" data-bs-toggle="dropdown">
+                <i class="fa fa-th-large me-1"></i> লেআউট প্রিসেট
+            </button>
+            <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="javascript:void(0)" onclick="applyPreset('standard100')">স্ট্যান্ডার্ড ১০০ প্রশ্ন (৪ কলাম)</a></li>
+                <li><a class="dropdown-item" href="javascript:void(0)" onclick="applyPreset('admissionStyle')">এডমিশন চ্যালেঞ্জ স্টাইল (৩ কলাম)</a></li>
+                <li><a class="dropdown-item" href="javascript:void(0)" onclick="applyPreset('compact50')">মডেল টেস্ট ৫০ প্রশ্ন (২ কলাম)</a></li>
+            </ul>
+        </div>
+
         <!-- PRINT BUTTON -->
         <button type="button" class="btn btn-success fw-bold shadow-sm" onclick="triggerPrint()">
             <i class="fa fa-print fa-lg me-1"></i> প্রিন্ট / PDF সংরক্ষণ
@@ -423,16 +448,16 @@
                         <div class="mb-3">
                             <label class="form-label small fw-bold">প্রিন্ট কালার থিম (Color Theme):</label>
                             <div class="d-flex flex-wrap gap-2">
-                                <button type="button" class="color-swatch-btn active" onclick="setTheme('theme-red', this)">
+                                <button type="button" class="theme-pill-btn active" onclick="setTheme('theme-red', this)">
                                     <span style="width:12px;height:12px;border-radius:50%;background:#d32f2f;display:inline-block;margin-right:4px;"></span> লাল / গোলাপী
                                 </button>
-                                <button type="button" class="color-swatch-btn" onclick="setTheme('theme-black', this)">
+                                <button type="button" class="theme-pill-btn" onclick="setTheme('theme-black', this)">
                                     <span style="width:12px;height:12px;border-radius:50%;background:#212529;display:inline-block;margin-right:4px;"></span> সাদা-কালো
                                 </button>
-                                <button type="button" class="color-swatch-btn" onclick="setTheme('theme-blue', this)">
+                                <button type="button" class="theme-pill-btn" onclick="setTheme('theme-blue', this)">
                                     <span style="width:12px;height:12px;border-radius:50%;background:#1565c0;display:inline-block;margin-right:4px;"></span> রয়্যাল ব্লু
                                 </button>
-                                <button type="button" class="color-swatch-btn" onclick="setTheme('theme-green', this)">
+                                <button type="button" class="theme-pill-btn" onclick="setTheme('theme-green', this)">
                                     <span style="width:12px;height:12px;border-radius:50%;background:#2e7d32;display:inline-block;margin-right:4px;"></span> সবুজ
                                 </button>
                             </div>
@@ -514,20 +539,20 @@
                             <div class="small fw-bold text-muted mb-1">নির্বাচিত ব্লক (Selected Block):</div>
                             <div class="d-flex justify-content-between align-items-center">
                                 <h6 class="fw-bold text-primary mb-0" id="selBlockTitle">রোল নম্বর গ্রিড</h6>
-                                <span class="badge bg-primary" id="selBlockBadge">roll_grid</span>
+                                <span class="badge bg-primary" id="selBlockBadge">roll</span>
                             </div>
                         </div>
 
                         <div class="row g-2 mb-3">
                             <div class="col-6">
-                                <label class="form-label small text-muted mb-0">X পজিশন (বাম থেকে):</label>
+                                <label class="form-label small text-muted mb-0">X (বাম থেকে):</label>
                                 <div class="input-group input-group-sm">
                                     <input type="number" class="form-control" id="pos_x" oninput="applyManualPosition()">
                                     <span class="input-group-text">px</span>
                                 </div>
                             </div>
                             <div class="col-6">
-                                <label class="form-label small text-muted mb-0">Y পজিশন (উপর থেকে):</label>
+                                <label class="form-label small text-muted mb-0">Y (উপর থেকে):</label>
                                 <div class="input-group input-group-sm">
                                     <input type="number" class="form-control" id="pos_y" oninput="applyManualPosition()">
                                     <span class="input-group-text">px</span>
@@ -551,7 +576,7 @@
 
                         <!-- NUDGE BUTTONS -->
                         <div class="mb-3 text-center">
-                            <label class="form-label small fw-bold text-muted d-block">পজিশন নাড়াচাড়া করুন (১ পিক্সেল স্টেপ):</label>
+                            <label class="form-label small fw-bold text-muted d-block">পজিশন অ্যাডজাস্ট (৫ পিক্সেল ধাপ):</label>
                             <div class="btn-group btn-group-sm">
                                 <button type="button" class="btn btn-outline-secondary" onclick="nudgeActiveBlock(0, -5)" title="উপরে"><i class="fa fa-arrow-up"></i></button>
                                 <button type="button" class="btn btn-outline-secondary" onclick="nudgeActiveBlock(0, 5)" title="নিচে"><i class="fa fa-arrow-down"></i></button>
@@ -562,7 +587,7 @@
 
                         <div class="d-grid">
                             <button type="button" class="btn btn-outline-danger btn-sm" onclick="resetBlockPositions()">
-                                <i class="fa fa-redo me-1"></i> স্ট্যান্ডার্ড পজিশনে রিসেট করুন
+                                <i class="fa fa-redo me-1"></i> আদর্শ অবস্থানে রিসেট করুন
                             </button>
                         </div>
                     </div>
@@ -571,7 +596,7 @@
             </div>
 
             <div class="card-footer bg-light p-2 text-center">
-                <small class="text-muted"><i class="fa fa-mouse-pointer text-primary me-1"></i> শিটের যেকোনো ব্লকে ক্লিক করে সরাসরি মাউস দিয়ে টেনে (Drag) সরিয়ে নিন।</small>
+                <small class="text-muted"><i class="fa fa-mouse-pointer text-primary me-1"></i> শিটের যেকোনো ব্লকে ক্লিক করে সরাসরি মাউস দিয়ে টেনে সরিয়ে নিন।</small>
             </div>
         </div>
     </div>
@@ -607,35 +632,35 @@
 
                     <!-- 1. HEADER BLOCK -->
                     <div class="designer-block" id="block_header" onmousedown="onBlockMouseDown(event, 'header')">
-                        <div class="block-drag-handle"><i class="fa fa-arrows-alt me-1"></i>শিরোনাম ব্লক</div>
-                        <div class="block-inner-content inst-header-content">
-                            <h1 class="inst-main-title" id="dispTitle">Admission Challenge</h1>
-                            <p class="inst-sub-title" id="dispTagline">বিশ্ববিদ্যালয় ভর্তি কোচিং</p>
-                            <div><span class="inst-banner-pill" id="dispExamBanner">মডেল টেস্ট ওএমআর মূল্যায়ন শিট</span></div>
+                        <div class="block-drag-pill"><i class="fa fa-arrows-alt me-1"></i>শিরোনাম ব্লক</div>
+                        <div class="block-content-box hdr-content">
+                            <h1 class="hdr-title" id="dispTitle">Admission Challenge</h1>
+                            <p class="hdr-tagline" id="dispTagline">বিশ্ববিদ্যালয় ভর্তি কোচিং</p>
+                            <div><span class="hdr-pill" id="dispExamBanner">মডেল টেস্ট ওএমআর মূল্যায়ন শিট</span></div>
                         </div>
                     </div>
 
                     <!-- 2. STUDENT INFO BLOCK -->
                     <div class="designer-block" id="block_info" onmousedown="onBlockMouseDown(event, 'info')">
-                        <div class="block-drag-handle"><i class="fa fa-arrows-alt me-1"></i>শিক্ষার্থীর তথ্য ও নির্দেশনাবলী</div>
-                        <div class="block-inner-content">
-                            <div class="info-container-box">
+                        <div class="block-drag-pill"><i class="fa fa-arrows-alt me-1"></i>শিক্ষার্থীর তথ্য ও নির্দেশনাবলী</div>
+                        <div class="block-content-box">
+                            <div class="info-border-box">
                                 <div>
-                                    <div class="info-line-row">
-                                        <span class="info-lbl">শিক্ষার্থীর নাম:</span>
-                                        <div class="info-dotted-line"></div>
+                                    <div class="info-item-row">
+                                        <span class="info-lbl-txt">শিক্ষার্থীর নাম:</span>
+                                        <div class="info-dots-line"></div>
                                     </div>
-                                    <div class="info-line-row">
-                                        <span class="info-lbl">পরীক্ষার তারিখ:</span>
-                                        <div class="info-dotted-line"></div>
+                                    <div class="info-item-row">
+                                        <span class="info-lbl-txt">পরীক্ষার তারিখ:</span>
+                                        <div class="info-dots-line"></div>
                                     </div>
-                                    <div class="info-line-row">
-                                        <span class="info-lbl">কক্ষ নং:</span>
-                                        <div class="info-dotted-line"></div>
+                                    <div class="info-item-row" style="margin-bottom: 0;">
+                                        <span class="info-lbl-txt">কক্ষ নং:</span>
+                                        <div class="info-dots-line"></div>
                                     </div>
                                 </div>
-                                <div style="font-size: 10px; background: var(--omr-light); border: 1px dashed var(--omr-primary); border-radius: 4px; padding: 4px 6px; line-height: 1.2;">
-                                    <strong><i class="fa fa-info-circle me-1"></i>নির্দেশনা:</strong> কালো বলপয়েন্ট কলম দিয়ে সম্পূর্ণ বৃত্ত ভরাট করুন। কাটাকাটি বা ভাঁজ করবেন না।
+                                <div style="font-size: 10px; background: var(--omr-light); border: 1px dashed var(--omr-primary); border-radius: 4px; padding: 4px 6px; line-height: 1.25;">
+                                    <strong><i class="fa fa-info-circle me-1"></i>নির্দেশনা:</strong> কালো বলপয়েন্ট কলম দিয়ে বৃত্ত সম্পূর্ণরূপে ভরাট করুন। কোনো কাটাকাটি বা ভাঁজ করবেন না।
                                 </div>
                             </div>
                         </div>
@@ -643,22 +668,22 @@
 
                     <!-- 3. SET CODE BLOCK -->
                     <div class="designer-block" id="block_set" onmousedown="onBlockMouseDown(event, 'set')">
-                        <div class="block-drag-handle"><i class="fa fa-arrows-alt me-1"></i>সেট কোড</div>
-                        <div class="block-inner-content">
-                            <div class="grid-card-border">
-                                <div class="grid-hdr">সেট</div>
-                                <div class="writein-cell" style="width: 100%;"></div>
-                                <div id="setBubblesContainer" style="padding: 4px; display: flex; flex-direction: column; gap: 4px; align-items: center; justify-content: space-around; flex-grow: 1;"></div>
+                        <div class="block-drag-pill"><i class="fa fa-arrows-alt me-1"></i>সেট কোড</div>
+                        <div class="block-content-box">
+                            <div class="grid-styled-card">
+                                <div class="card-top-header">সেট</div>
+                                <div class="write-box-cell" style="width: 100%;"></div>
+                                <div id="setBubblesContainer" style="padding: 4px; display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: space-around; flex-grow: 1;"></div>
                             </div>
                         </div>
                     </div>
 
                     <!-- 4. ROLL NUMBER GRID BLOCK -->
                     <div class="designer-block" id="block_roll" onmousedown="onBlockMouseDown(event, 'roll')">
-                        <div class="block-drag-handle"><i class="fa fa-arrows-alt me-1"></i>রোল নম্বর গ্রিড</div>
-                        <div class="block-inner-content">
-                            <div class="grid-card-border">
-                                <div class="grid-hdr">রোল নম্বর (Roll No)</div>
+                        <div class="block-drag-pill"><i class="fa fa-arrows-alt me-1"></i>রোল নম্বর গ্রিড</div>
+                        <div class="block-content-box">
+                            <div class="grid-styled-card">
+                                <div class="card-top-header">রোল নম্বর (Roll No)</div>
                                 <div class="d-flex" id="rollWriteinContainer" style="border-bottom: 1.5px solid var(--omr-primary);"></div>
                                 <div class="d-flex justify-content-center p-1" id="rollBubblesMatrixContainer" style="gap: 3px; flex-grow: 1;"></div>
                             </div>
@@ -667,19 +692,21 @@
 
                     <!-- 5. QUESTIONS AREA BLOCK -->
                     <div class="designer-block" id="block_questions" onmousedown="onBlockMouseDown(event, 'questions')">
-                        <div class="block-drag-handle"><i class="fa fa-arrows-alt me-1"></i>প্রশ্নোত্তর বাবল কলামসমূহ</div>
-                        <div class="block-inner-content">
-                            <div class="questions-wrapper" id="questionsColumnsContainer"></div>
+                        <div class="block-drag-pill"><i class="fa fa-arrows-alt me-1"></i>প্রশ্নোত্তর বাবল কলামসমূহ</div>
+                        <div class="block-content-box">
+                            <div class="columns-flex-container" id="questionsColumnsContainer"></div>
                         </div>
                     </div>
 
                     <!-- 6. FOOTER BLOCK -->
                     <div class="designer-block" id="block_footer" onmousedown="onBlockMouseDown(event, 'footer')">
-                        <div class="block-drag-handle"><i class="fa fa-arrows-alt me-1"></i>ফুটার ও স্বাক্ষর</div>
-                        <div class="block-inner-content footer-container">
-                            <div class="sig-line-box">পরীক্ষার্থীর স্বাক্ষর</div>
-                            <div style="font-size: 10px; color: #6c757d;">OMR Engine Generated &bull; Do Not Fold</div>
-                            <div class="sig-line-box">কক্ষ পরিদর্শকের স্বাক্ষর</div>
+                        <div class="block-drag-pill"><i class="fa fa-arrows-alt me-1"></i>ফুটার ও স্বাক্ষর</div>
+                        <div class="block-content-box">
+                            <div class="footer-flex-row">
+                                <div class="signature-area-box">পরীক্ষার্থীর স্বাক্ষর</div>
+                                <div style="font-size: 10px; color: #6c757d;">OMR Engine Generated &bull; Do Not Fold</div>
+                                <div class="signature-area-box">কক্ষ পরিদর্শকের স্বাক্ষর</div>
+                            </div>
                         </div>
                     </div>
 
@@ -693,19 +720,20 @@
 {% block extra_js %}
 <script>
 // ==============================================================================
-// 1. STATE & DEFAULT A4 BLOCK POSITIONS (794 x 1123)
+// 1. STATE & HARMONIZED DEFAULT A4 BLOCK POSITIONS (794 x 1123)
 // ==============================================================================
 let currentTheme = 'theme-red';
 let currentZoomScale = 1.0;
 let activeSelectedBlockKey = 'roll';
 
+// Balanced, non-overlapping coordinates (Derived from tested A4 sheet architecture)
 const defaultPositions = {
-    header:    { x: 45,  y: 35,   w: 704, h: 90  },
-    info:      { x: 45,  y: 135,  w: 395, h: 185 },
-    set:       { x: 450, y: 135,  w: 42,  h: 185 },
-    roll:      { x: 502, y: 135,  w: 247, h: 185 },
-    questions: { x: 45,  y: 330,  w: 704, h: 695 },
-    footer:    { x: 45,  y: 1035, w: 704, h: 45  }
+    header:    { x: 50,  y: 20,   w: 475, h: 80  },
+    info:      { x: 50,  y: 108,  w: 475, h: 165 },
+    set:       { x: 535, y: 20,   w: 42,  h: 135 },
+    roll:      { x: 585, y: 20,   w: 160, h: 253 },
+    questions: { x: 50,  y: 285,  w: 695, h: 775 },
+    footer:    { x: 50,  y: 1070, w: 695, h: 32  }
 };
 
 let blockPositions = JSON.parse(JSON.stringify(defaultPositions));
@@ -720,7 +748,56 @@ const blockTitles = {
 };
 
 // ==============================================================================
-// 2. DRAG AND DROP ENGINE
+// 2. LAYOUT PRESETS
+// ==============================================================================
+function applyPreset(presetKey) {
+    if (presetKey === 'standard100') {
+        document.getElementById('cfgTotalQ').value = '100';
+        document.getElementById('cfgCols').value = '4';
+        document.getElementById('cfgRollDigits').value = '6';
+        document.getElementById('cfgSets').value = '4';
+        blockPositions = {
+            header:    { x: 50,  y: 20,   w: 475, h: 80  },
+            info:      { x: 50,  y: 108,  w: 475, h: 165 },
+            set:       { x: 535, y: 20,   w: 42,  h: 135 },
+            roll:      { x: 585, y: 20,   w: 160, h: 253 },
+            questions: { x: 50,  y: 285,  w: 695, h: 775 },
+            footer:    { x: 50,  y: 1070, w: 695, h: 32  }
+        };
+    } else if (presetKey === 'admissionStyle') {
+        document.getElementById('cfgTotalQ').value = '75';
+        document.getElementById('cfgCols').value = '3';
+        document.getElementById('cfgRollDigits').value = '6';
+        document.getElementById('cfgSets').value = '4';
+        blockPositions = {
+            header:    { x: 50,  y: 20,   w: 460, h: 80  },
+            info:      { x: 50,  y: 108,  w: 460, h: 165 },
+            set:       { x: 520, y: 20,   w: 45,  h: 135 },
+            roll:      { x: 575, y: 20,   w: 170, h: 253 },
+            questions: { x: 50,  y: 285,  w: 695, h: 775 },
+            footer:    { x: 50,  y: 1070, w: 695, h: 32  }
+        };
+    } else if (presetKey === 'compact50') {
+        document.getElementById('cfgTotalQ').value = '50';
+        document.getElementById('cfgCols').value = '2';
+        document.getElementById('cfgRollDigits').value = '5';
+        document.getElementById('cfgSets').value = '2';
+        blockPositions = {
+            header:    { x: 50,  y: 25,   w: 475, h: 85  },
+            info:      { x: 50,  y: 118,  w: 475, h: 165 },
+            set:       { x: 535, y: 25,   w: 42,  h: 110 },
+            roll:      { x: 585, y: 25,   w: 160, h: 258 },
+            questions: { x: 50,  y: 295,  w: 695, h: 765 },
+            footer:    { x: 50,  y: 1070, w: 695, h: 32  }
+        };
+    }
+    updateSubjectInputs();
+    renderSheetDOM();
+    updatePositionInputs(activeSelectedBlockKey);
+}
+
+// ==============================================================================
+// 3. DRAG AND DROP ENGINE (WITH GRID SNAPPING & ZERO TEXT HIGHLIGHT)
 // ==============================================================================
 let activeDraggedBlock = null;
 let dragStartX = 0, dragStartY = 0;
@@ -741,6 +818,7 @@ function selectBlock(blockKey) {
 function onBlockMouseDown(e, blockKey) {
     if (e.button !== 0) return; // Left click only
     e.stopPropagation();
+    e.preventDefault(); // Prevent text selection
     selectBlock(blockKey);
 
     activeDraggedBlock = blockKey;
@@ -761,12 +839,12 @@ function onBlockMouseMove(e) {
     const dy = (e.clientY - dragStartY) / currentZoomScale;
 
     const block = blockPositions[activeDraggedBlock];
-    let newX = Math.round(blockStartCoords.x + dx);
-    let newY = Math.round(blockStartCoords.y + dy);
+    let newX = Math.round((blockStartCoords.x + dx) / 2) * 2; // 2px soft grid snap
+    let newY = Math.round((blockStartCoords.y + dy) / 2) * 2;
 
     // Bounds constraint inside 794 x 1123 A4 canvas
-    newX = Math.max(15, Math.min(794 - block.w - 15, newX));
-    newY = Math.max(15, Math.min(1123 - block.h - 15, newY));
+    newX = Math.max(30, Math.min(764 - block.w, newX));
+    newY = Math.max(20, Math.min(1103 - block.h, newY));
 
     block.x = newX;
     block.y = newY;
@@ -820,8 +898,8 @@ function applyManualPosition() {
 function nudgeActiveBlock(dx, dy) {
     const block = blockPositions[activeSelectedBlockKey];
     if (block) {
-        block.x = Math.max(15, Math.min(794 - block.w - 15, block.x + dx));
-        block.y = Math.max(15, Math.min(1123 - block.h - 15, block.y + dy));
+        block.x = Math.max(30, Math.min(764 - block.w, block.x + dx));
+        block.y = Math.max(20, Math.min(1103 - block.h, block.y + dy));
         applyBlockStyle(activeSelectedBlockKey);
         updatePositionInputs(activeSelectedBlockKey);
     }
@@ -834,7 +912,7 @@ function resetBlockPositions() {
 }
 
 // ==============================================================================
-// 3. AUTO-FIT & ZOOM SYSTEM (FIXES "SMALL IN CORNER")
+// 4. AUTO-FIT & ZOOM SYSTEM (MATHEMATICALLY EXACT SCALE & CENTER)
 // ==============================================================================
 function autoFitSheet() {
     const viewport = document.getElementById('sheetViewport');
@@ -863,11 +941,11 @@ function setZoomScale(scale, labelText = null) {
 }
 
 // ==============================================================================
-// 4. RENDER DOM ELEMENTS & DATA
+// 5. RENDER DOM ELEMENTS & DATA
 // ==============================================================================
 function setTheme(themeClass, btn) {
     currentTheme = themeClass;
-    document.querySelectorAll('.color-swatch-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.theme-pill-btn').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
     document.getElementById('omrA4Sheet').className = `omr-a4-canvas ${themeClass}`;
 }
@@ -908,7 +986,7 @@ function renderSheetDOM() {
     document.getElementById('dispTagline').innerText = document.getElementById('cfgTagline').value.trim() || '';
     document.getElementById('dispExamBanner').innerText = document.getElementById('cfgExamName').value.trim() || 'মডেল টেস্ট';
 
-    // 2. Timing ticks
+    // 2. Timing ticks (35 clean black squares)
     const timingTrack = document.getElementById('timingBarTrack');
     timingTrack.innerHTML = '';
     for (let i = 0; i < 35; i++) {
@@ -930,7 +1008,7 @@ function renderSheetDOM() {
         setBlock.style.display = 'block';
         for (let s = 0; s < setCount; s++) {
             const b = document.createElement('div');
-            b.className = 'omr-bubble';
+            b.className = 'omr-bubble-circle';
             b.innerText = setLetters[s];
             setBubbles.appendChild(b);
         }
@@ -943,21 +1021,21 @@ function renderSheetDOM() {
     rollWritein.innerHTML = '';
     rollMatrix.innerHTML = '';
 
-    // Adjust roll block width proportionally
-    blockPositions.roll.w = Math.max(180, rollDigits * 36);
+    // Dynamic width calculation: 24px per digit + margins
+    blockPositions.roll.w = Math.max(140, rollDigits * 26 + 10);
     applyBlockStyle('roll');
 
     for (let c = 0; c < rollDigits; c++) {
         const wb = document.createElement('div');
-        wb.className = 'writein-cell flex-fill';
+        wb.className = 'write-box-cell flex-fill';
         rollWritein.appendChild(wb);
 
         const col = document.createElement('div');
         col.className = 'd-flex flex-column align-items-center flex-fill';
-        col.style.gap = '3px';
+        col.style.gap = '2.5px';
         for (let r = 0; r <= 9; r++) {
             const b = document.createElement('div');
-            b.className = 'omr-bubble';
+            b.className = 'omr-bubble-circle';
             b.innerText = r;
             col.appendChild(b);
         }
@@ -982,30 +1060,30 @@ function renderSheetDOM() {
         currentQ = endQ + 1;
 
         const colDiv = document.createElement('div');
-        colDiv.className = 'q-col-card';
+        colDiv.className = 'col-q-card';
 
         const hdr = document.createElement('div');
-        hdr.className = 'q-col-hdr';
+        hdr.className = 'col-q-header';
         hdr.innerText = subInputs[c] || `কলাম ${c + 1} (${startQ} - ${endQ})`;
         colDiv.appendChild(hdr);
 
         const qList = document.createElement('div');
-        qList.className = 'q-list-rows';
+        qList.className = 'col-q-rows-list';
 
         for (let q = startQ; q <= endQ; q++) {
             const row = document.createElement('div');
-            row.className = 'q-item-row';
+            row.className = 'q-single-row';
 
             const num = document.createElement('div');
-            num.className = 'q-label-no';
+            num.className = 'q-index-num';
             num.innerText = q;
             row.appendChild(num);
 
             const bubblesDiv = document.createElement('div');
-            bubblesDiv.className = 'd-flex gap-1';
+            bubblesDiv.className = 'd-flex gap-1 align-items-center';
             for (let o = 0; o < optCount; o++) {
                 const b = document.createElement('div');
-                b.className = 'omr-bubble';
+                b.className = 'omr-bubble-circle';
                 b.innerText = optLetters[o];
                 bubblesDiv.appendChild(b);
             }
@@ -1022,7 +1100,7 @@ function renderSheetDOM() {
 }
 
 // ==============================================================================
-// 5. PRINT & TEMPLATE EXPORT
+// 6. PRINT & TEMPLATE EXPORT
 // ==============================================================================
 function triggerPrint() {
     const totalQ = parseInt(document.getElementById('cfgTotalQ').value);
@@ -1069,14 +1147,14 @@ async function saveAsOMRTemplate() {
     const qPerCol = Math.ceil(totalQ / cols);
     const subInputs = Array.from(document.querySelectorAll('.subject-input')).map(i => i.value.trim() || 'সাধারণ');
     const answerCols = [];
-    const colW = Math.round((qPos.w - ((cols - 1) * 8)) / cols);
+    const colW = Math.round((qPos.w - ((cols - 1) * 6)) / cols);
 
     let curQ = 1;
     for (let c = 0; c < cols; c++) {
         const startQ = curQ;
         const endQ = Math.min(startQ + qPerCol - 1, totalQ);
         curQ = endQ + 1;
-        const colX = qPos.x + c * (colW + 8);
+        const colX = qPos.x + c * (colW + 6);
 
         answerCols.push({
             column_index: c + 1,
@@ -1084,9 +1162,9 @@ async function saveAsOMRTemplate() {
             q_start: startQ,
             q_end: endQ,
             x: colX,
-            y: qPos.y + 24, // accounting for header
+            y: qPos.y + 20, // accounting for header
             w: colW,
-            h: qPos.h - 24
+            h: qPos.h - 20
         });
     }
 
@@ -1096,17 +1174,17 @@ async function saveAsOMRTemplate() {
         dimensions: { width: 794, height: 1123 },
         id_grid: {
             x: rollPos.x,
-            y: rollPos.y + 24,
+            y: rollPos.y + 20,
             w: rollPos.w,
-            h: rollPos.h - 24,
+            h: rollPos.h - 20,
             columns: rollDigits,
             rows: 10
         },
         set_region: {
             x: setPos.x,
-            y: setPos.y + 24,
+            y: setPos.y + 20,
             w: setPos.w,
-            h: setPos.h - 24,
+            h: setPos.h - 20,
             rows: sets > 0 ? sets : 1,
             columns: 1
         },
