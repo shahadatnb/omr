@@ -27,7 +27,7 @@
             justify-content: center;
         }
 
-        /* 1:1.414 Standard A4 Sheet Box */
+        /* SHEET CONTAINER WITH DUAL MODE: FLOW OR ABSOLUTE CANVAS */
         .sheet-page {
             width: 210mm;
             min-height: 297mm;
@@ -36,10 +36,18 @@
             background: #ffffff;
             position: relative;
             box-shadow: 0 4px 15px rgba(0,0,0,0.15);
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
             overflow: hidden;
+        }
+
+        .sheet-page.canvas-mode {
+            padding: 0;
+            width: 794px;
+            height: 1123px;
+            min-height: 1123px;
+        }
+
+        .sheet-page.canvas-mode .sheet-block {
+            position: absolute;
         }
 
         /* 4 CORNER MARKERS (SOLID BLACK SQUARES FOR OPENCV WARPING) */

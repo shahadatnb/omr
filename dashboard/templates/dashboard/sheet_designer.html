@@ -4,53 +4,349 @@
 
 {% block extra_css %}
 <style>
+    /* DESIGNER WORKSPACE */
     .designer-panel {
-        max-height: calc(100vh - 120px);
+        max-height: calc(100vh - 110px);
         overflow-y: auto;
     }
 
-    .preview-container {
-        background-color: #525659;
-        border-radius: 8px;
-        padding: 20px;
+    /* PREVIEW VIEWPORT (DARK CANVAS BOARD) */
+    .sheet-viewport {
+        background-color: #2b3035;
+        border-radius: 10px;
+        padding: 24px 16px;
         display: flex;
         justify-content: center;
         align-items: flex-start;
-        overflow: auto;
+        overflow-x: auto;
+        overflow-y: auto;
         min-height: calc(100vh - 120px);
         max-height: calc(100vh - 120px);
+        box-shadow: inset 0 2px 8px rgba(0,0,0,0.4);
     }
 
-    .preview-frame {
-        width: 210mm;
-        height: 297mm;
-        border: none;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        transform-origin: top center;
-        transition: transform 0.2s ease;
-        background: #fff;
+    /* SCALABLE WRAPPER TO PREVENT EMPTY CORNER MARGINS */
+    .sheet-zoom-wrapper {
+        margin: 0 auto;
+        display: block;
+        transition: width 0.15s ease, height 0.15s ease;
+        position: relative;
     }
 
-    .color-swatch-label {
+    /* REAL A4 SHEET (794px x 1123px at 96 DPI) */
+    .omr-a4-canvas {
+        width: 794px;
+        height: 1123px;
+        background: #ffffff;
+        position: absolute;
+        top: 0;
+        left: 0;
+        box-shadow: 0 12px 36px rgba(0,0,0,0.6);
+        border-radius: 2px;
+        transform-origin: top left;
+        overflow: hidden;
+        user-select: none;
+    }
+
+    /* 4 SOLID BLACK ALIGNMENT CORNER SQUARES */
+    .corner-marker {
+        position: absolute;
+        width: 30px;
+        height: 30px;
+        background: #000000;
+        z-index: 50;
+    }
+    .corner-marker.tl { top: 14px; left: 14px; }
+    .corner-marker.tr { top: 14px; right: 14px; }
+    .corner-marker.bl { bottom: 14px; left: 14px; }
+    .corner-marker.br { bottom: 14px; right: 14px; }
+
+    /* TIMING TRACK ALONG LEFT EDGE */
+    .timing-bar-track {
+        position: absolute;
+        left: 18px;
+        top: 90px;
+        bottom: 90px;
+        width: 12px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        pointer-events: none;
+        z-index: 40;
+    }
+    .timing-tick-mark {
+        width: 12px;
+        height: 6px;
+        background: #000000;
+    }
+
+    /* DRAGGABLE & SELECTABLE BLOCKS */
+    .designer-block {
+        position: absolute;
+        cursor: grab;
+        border: 1.5px dashed transparent;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.95);
+        transition: border-color 0.1s, box-shadow 0.1s;
+        z-index: 10;
+        box-sizing: border-box;
+    }
+    .designer-block:hover {
+        border-color: #0d6efd;
+        background: rgba(255, 255, 255, 1);
+    }
+    .designer-block.active-block {
+        border: 2px solid #0d6efd !important;
+        box-shadow: 0 0 12px rgba(13, 110, 253, 0.35);
+        z-index: 30 !important;
+    }
+    .designer-block.dragging {
+        cursor: grabbing !important;
+        opacity: 0.92;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.3) !important;
+    }
+
+    /* DRAG HANDLE BADGE */
+    .block-drag-handle {
+        position: absolute;
+        top: -14px;
+        left: 8px;
+        background: #0d6efd;
+        color: #ffffff;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 1px 7px;
+        border-radius: 3px;
+        display: none;
+        pointer-events: none;
+        white-space: nowrap;
+        z-index: 35;
+    }
+    .designer-block.active-block .block-drag-handle {
+        display: block;
+    }
+
+    /* COLOR THEMES */
+    .theme-red {
+        --omr-primary: #d32f2f;
+        --omr-light: #ffebee;
+        --omr-dark: #b71c1c;
+        --omr-border: #ef9a9a;
+        --omr-text: #212529;
+    }
+    .theme-black {
+        --omr-primary: #212529;
+        --omr-light: #f8f9fa;
+        --omr-dark: #000000;
+        --omr-border: #ced4da;
+        --omr-text: #000000;
+    }
+    .theme-blue {
+        --omr-primary: #1565c0;
+        --omr-light: #e3f2fd;
+        --omr-dark: #0d47a1;
+        --omr-border: #90caf9;
+        --omr-text: #212529;
+    }
+    .theme-green {
+        --omr-primary: #2e7d32;
+        --omr-light: #e8f5e9;
+        --omr-dark: #1b5e20;
+        --omr-border: #a5d6a7;
+        --omr-text: #212529;
+    }
+
+    /* INNER BLOCK STYLING */
+    .block-inner-content {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        pointer-events: none; /* Let drag events hit block container */
+    }
+
+    .inst-header-content {
+        text-align: center;
+        border-bottom: 2px solid var(--omr-primary);
+        padding-bottom: 6px;
+    }
+    .inst-main-title {
+        font-size: 24px;
+        font-weight: 700;
+        color: var(--omr-primary);
+        margin: 0;
+        line-height: 1.1;
+    }
+    .inst-sub-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: #495057;
+        margin: 2px 0 0 0;
+    }
+    .inst-banner-pill {
+        display: inline-block;
+        background: var(--omr-primary);
+        color: #ffffff;
+        font-size: 13px;
+        font-weight: 700;
+        padding: 3px 14px;
+        border-radius: 4px;
+        margin-top: 4px;
+    }
+
+    /* STUDENT INFO & INSTRUCTIONS */
+    .info-container-box {
+        border: 1px solid var(--omr-border);
+        border-radius: 5px;
+        padding: 8px 10px;
+        height: 100%;
+        font-size: 12px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+    .info-line-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: 6px;
+    }
+    .info-lbl {
+        font-weight: 700;
+        color: var(--omr-dark);
+        width: 120px;
+        flex-shrink: 0;
+    }
+    .info-dotted-line {
+        border-bottom: 1.5px dotted #6c757d;
+        flex-grow: 1;
+        height: 16px;
+    }
+
+    /* ROLL & SET GRIDS */
+    .grid-card-border {
+        border: 1.5px solid var(--omr-primary);
+        border-radius: 5px;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: #ffffff;
+    }
+    .grid-hdr {
+        background: var(--omr-primary);
+        color: #ffffff;
+        font-weight: 700;
+        font-size: 12px;
+        text-align: center;
+        padding: 3px 0;
+    }
+    .writein-cell {
+        height: 22px;
+        border-right: 1px solid var(--omr-border);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        font-size: 12px;
+        font-family: 'Roboto', sans-serif;
+    }
+    .writein-cell:last-child { border-right: none; }
+
+    /* BUBBLES */
+    .omr-bubble {
+        width: 16px;
+        height: 16px;
+        border: 1.2px solid var(--omr-primary);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 9px;
+        font-weight: 700;
+        color: var(--omr-primary);
+        background: #ffffff;
+        font-family: 'Roboto', sans-serif;
+    }
+
+    /* QUESTIONS COLUMNS */
+    .questions-wrapper {
+        display: flex;
+        gap: 8px;
+        height: 100%;
+    }
+    .q-col-card {
+        flex: 1;
+        border: 1px solid var(--omr-border);
+        border-radius: 5px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: #ffffff;
+    }
+    .q-col-hdr {
+        background: var(--omr-primary);
+        color: #ffffff;
+        font-weight: 700;
+        font-size: 11px;
+        text-align: center;
+        padding: 3px 0;
+    }
+    .q-list-rows {
+        padding: 4px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-around;
+        flex-grow: 1;
+    }
+    .q-item-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1px 0;
+        border-bottom: 0.5px dotted #f1f3f5;
+    }
+    .q-item-row:last-child { border-bottom: none; }
+    .q-label-no {
+        font-weight: 700;
+        font-size: 10px;
+        color: #495057;
+        width: 22px;
+        text-align: right;
+        padding-right: 3px;
+        font-family: 'Roboto', sans-serif;
+    }
+
+    /* FOOTER */
+    .footer-container {
+        border-top: 1.5px solid var(--omr-primary);
+        padding-top: 4px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        height: 100%;
+        font-size: 11px;
+    }
+    .sig-line-box {
+        width: 180px;
+        border-top: 1px solid #212529;
+        text-align: center;
+        padding-top: 3px;
+        font-weight: 600;
+    }
+
+    .color-swatch-btn {
         cursor: pointer;
-        border: 2px solid transparent;
-        padding: 6px 12px;
+        border: 2px solid #dee2e6;
+        padding: 5px 12px;
         border-radius: 6px;
         display: inline-flex;
         align-items: center;
         font-weight: 600;
-        font-size: 13px;
+        font-size: 12px;
+        background: #fff;
     }
-    .color-swatch-label.active {
+    .color-swatch-btn.active {
         border-color: #0d6efd;
-        background-color: #f8f9fa;
-    }
-    .swatch-circle {
-        width: 14px;
-        height: 14px;
-        border-radius: 50%;
-        display: inline-block;
-        margin-right: 6px;
+        background-color: #e7f1ff;
     }
 </style>
 {% endblock %}
@@ -61,14 +357,14 @@
         <h4 class="fw-bold mb-0">
             <i class="fa fa-print text-primary me-2"></i>ওএমআর শিট ডিজাইনার ও প্রিন্ট জেনারেটর
         </h4>
-        <small class="text-muted">আপনার পছন্দমতো প্রশ্ন ও রোল গ্রিড দিয়ে A4 ওএমআর শিট ডিজাইন করুন, প্রেসে প্রিন্ট দিন এবং ওএমআর সফটওয়্যারে স্বয়ংক্রিয়ভাবে সিঙ্ক করুন</small>
+        <small class="text-muted">টেমপ্লেট এডিটরের মত যেকোনো ব্লক ড্র্যাগ অ্যান্ড ড্রপ করে সাজান এবং প্রেসে প্রিন্টের জন্য ভেক্টর PDF ডাউনলোড করুন</small>
     </div>
     <div class="d-flex gap-2 align-items-center">
-        <!-- PRINT / DOWNLOAD BUTTON -->
-        <button type="button" class="btn btn-success fw-bold shadow-sm" onclick="printOMRSheet()">
-            <i class="fa fa-print fa-lg me-1"></i> প্রিন্ট / PDF ডাউনলোড
+        <!-- PRINT BUTTON -->
+        <button type="button" class="btn btn-success fw-bold shadow-sm" onclick="triggerPrint()">
+            <i class="fa fa-print fa-lg me-1"></i> প্রিন্ট / PDF সংরক্ষণ
         </button>
-        <!-- SAVE AS TEMPLATE BUTTON -->
+        <!-- SAVE TEMPLATE BUTTON -->
         <button type="button" class="btn btn-primary fw-bold shadow-sm" onclick="saveAsOMRTemplate()">
             <i class="fa fa-save fa-lg me-1"></i> ওএমআর টেমপ্লেট সেভ করুন
         </button>
@@ -76,68 +372,70 @@
 </div>
 
 <div class="row g-3">
-    <!-- LEFT: DESIGN CONTROLS PANEL -->
-    <div class="col-lg-5">
+    <!-- LEFT: CONTROLS PANEL (TABS) -->
+    <div class="col-lg-4">
         <div class="card shadow-sm border-0 designer-panel">
-            <div class="card-header bg-white py-3">
+            <div class="card-header bg-white py-2">
                 <ul class="nav nav-pills nav-fill" id="designerTabs">
                     <li class="nav-item">
-                        <button class="nav-link active btn-sm" data-bs-toggle="pill" data-bs-target="#tabBranding">
-                            <i class="fa fa-university me-1"></i> ১. শিরোনাম ও কালার
+                        <button class="nav-link active py-1 px-2 small" data-bs-toggle="pill" data-bs-target="#tabBranding">
+                            <i class="fa fa-university me-1"></i> ১. ব্র্যান্ডিং
                         </button>
                     </li>
                     <li class="nav-item">
-                        <button class="nav-link btn-sm" data-bs-toggle="pill" data-bs-target="#tabQuestions">
-                            <i class="fa fa-list-ol me-1"></i> ২. প্রশ্ন ও বিষয়
+                        <button class="nav-link py-1 px-2 small" data-bs-toggle="pill" data-bs-target="#tabQuestions">
+                            <i class="fa fa-list-ol me-1"></i> ২. প্রশ্নাবলী
                         </button>
                     </li>
                     <li class="nav-item">
-                        <button class="nav-link btn-sm" data-bs-toggle="pill" data-bs-target="#tabRollSet">
+                        <button class="nav-link py-1 px-2 small" data-bs-toggle="pill" data-bs-target="#tabRollSet">
                             <i class="fa fa-id-card me-1"></i> ৩. রোল ও সেট
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link py-1 px-2 small" data-bs-toggle="pill" data-bs-target="#tabPositioning">
+                            <i class="fa fa-arrows-alt me-1"></i> ৪. ড্র্যাগ পজিশন
                         </button>
                     </li>
                 </ul>
             </div>
 
-            <div class="card-body p-4">
+            <div class="card-body p-3">
                 <div class="tab-content">
 
-                    <!-- TAB 1: BRANDING & TITLE & COLOR -->
+                    <!-- TAB 1: BRANDING & THEME -->
                     <div class="tab-pane fade show active" id="tabBranding">
                         <div class="mb-3">
-                            <label class="form-label fw-bold">প্রতিষ্ঠানের নাম (Header Title):</label>
-                            <input type="text" class="form-control" id="cfgTitle" value="{{ default_title }}" oninput="updatePreview()">
+                            <label class="form-label small fw-bold">প্রতিষ্ঠানের নাম (Header Title):</label>
+                            <input type="text" class="form-control form-control-sm" id="cfgTitle" value="{{ default_title }}" oninput="renderSheetDOM()">
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label fw-bold">উপ-শিরোনাম / স্লোগান (Tagline):</label>
-                            <input type="text" class="form-control" id="cfgTagline" value="{{ default_tagline }}" oninput="updatePreview()">
+                            <label class="form-label small fw-bold">উপ-শিরোনাম / স্লোগান (Tagline):</label>
+                            <input type="text" class="form-control form-control-sm" id="cfgTagline" value="{{ default_tagline }}" oninput="renderSheetDOM()">
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label fw-bold">পরীক্ষার নাম (Exam Name Banner):</label>
-                            <input type="text" class="form-control" id="cfgExamName" value="মডেল টেস্ট ওএমআর শিট" oninput="updatePreview()">
+                            <label class="form-label small fw-bold">পরীক্ষার নাম (Exam Name Banner):</label>
+                            <input type="text" class="form-control form-control-sm" id="cfgExamName" value="মডেল টেস্ট ওএমআর মূল্যায়ন শিট" oninput="renderSheetDOM()">
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label fw-bold">কালার থিম (Print Color Theme):</label>
+                            <label class="form-label small fw-bold">প্রিন্ট কালার থিম (Color Theme):</label>
                             <div class="d-flex flex-wrap gap-2">
-                                <label class="color-swatch-label active" onclick="selectTheme('theme-red', this)">
-                                    <span class="swatch-circle" style="background: #d32f2f;"></span> লাল / গোলাপী (এডমিশন স্টাইল)
-                                </label>
-                                <label class="color-swatch-label" onclick="selectTheme('theme-black', this)">
-                                    <span class="swatch-circle" style="background: #212529;"></span> সাদা-কালো (ফটোকপি সাশ্রয়ী)
-                                </label>
-                                <label class="color-swatch-label" onclick="selectTheme('theme-blue', this)">
-                                    <span class="swatch-circle" style="background: #1565c0;"></span> রয়্যাল ব্লু (অফিসিয়াল)
-                                </label>
-                                <label class="color-swatch-label" onclick="selectTheme('theme-green', this)">
-                                    <span class="swatch-circle" style="background: #2e7d32;"></span> ফরেস্ট গ্রিন
-                                </label>
+                                <button type="button" class="color-swatch-btn active" onclick="setTheme('theme-red', this)">
+                                    <span style="width:12px;height:12px;border-radius:50%;background:#d32f2f;display:inline-block;margin-right:4px;"></span> লাল / গোলাপী
+                                </button>
+                                <button type="button" class="color-swatch-btn" onclick="setTheme('theme-black', this)">
+                                    <span style="width:12px;height:12px;border-radius:50%;background:#212529;display:inline-block;margin-right:4px;"></span> সাদা-কালো
+                                </button>
+                                <button type="button" class="color-swatch-btn" onclick="setTheme('theme-blue', this)">
+                                    <span style="width:12px;height:12px;border-radius:50%;background:#1565c0;display:inline-block;margin-right:4px;"></span> রয়্যাল ব্লু
+                                </button>
+                                <button type="button" class="color-swatch-btn" onclick="setTheme('theme-green', this)">
+                                    <span style="width:12px;height:12px;border-radius:50%;background:#2e7d32;display:inline-block;margin-right:4px;"></span> সবুজ
+                                </button>
                             </div>
-                            <small class="text-muted d-block mt-1">
-                                <i class="fa fa-info-circle me-1"></i> প্রেসে ২-কালার প্রিন্টের জন্য লাল বা ব্লু সবচেয়ে জনপ্রিয়, আর সাধারণ ফটোকপিতে সাদাকালো থিম সবচেয়ে ভালো।
-                            </small>
                         </div>
                     </div>
 
@@ -145,8 +443,8 @@
                     <div class="tab-pane fade" id="tabQuestions">
                         <div class="row g-2 mb-3">
                             <div class="col-6">
-                                <label class="form-label fw-bold">মোট প্রশ্ন সংখ্যা:</label>
-                                <select class="form-select" id="cfgTotalQ" onchange="handleQuestionCountChange()">
+                                <label class="form-label small fw-bold">মোট প্রশ্ন:</label>
+                                <select class="form-select form-select-sm" id="cfgTotalQ" onchange="handleQuestionCountChange()">
                                     <option value="20">২০ টি প্রশ্ন</option>
                                     <option value="25">২৫ টি প্রশ্ন</option>
                                     <option value="30">৩০ টি প্রশ্ন</option>
@@ -158,8 +456,8 @@
                                 </select>
                             </div>
                             <div class="col-6">
-                                <label class="form-label fw-bold">কলাম বিন্যাস:</label>
-                                <select class="form-select" id="cfgCols" onchange="updateSubjectInputs()">
+                                <label class="form-label small fw-bold">কলাম সংখ্যা:</label>
+                                <select class="form-select form-select-sm" id="cfgCols" onchange="updateSubjectInputs()">
                                     <option value="1">১টি কলাম</option>
                                     <option value="2">২টি কলাম</option>
                                     <option value="3">৩টি কলাম</option>
@@ -169,81 +467,224 @@
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label fw-bold">উত্তরের বাবল অপশন সংখ্যা:</label>
+                            <label class="form-label small fw-bold">প্রতি প্রশ্নে অপশন:</label>
                             <div class="d-flex gap-3">
                                 <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="optCount" id="opt4" value="4" checked onchange="updatePreview()">
-                                    <label class="form-check-label" for="opt4">৪টি অপশন (A, B, C, D)</label>
+                                    <input class="form-check-input" type="radio" name="optCount" id="opt4" value="4" checked onchange="renderSheetDOM()">
+                                    <label class="form-check-label small" for="opt4">৪টি অপশন (A, B, C, D)</label>
                                 </div>
                                 <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="optCount" id="opt5" value="5" onchange="updatePreview()">
-                                    <label class="form-check-label" for="opt5">৫টি অপশন (A, B, C, D, E)</label>
+                                    <input class="form-check-input" type="radio" name="optCount" id="opt5" value="5" onchange="renderSheetDOM()">
+                                    <label class="form-check-label small" for="opt5">৫টি অপশন (A, B, C, D, E)</label>
                                 </div>
                             </div>
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label fw-bold">কলাম / বিষয় ভিত্তিক শিরোনাম:</label>
-                            <div id="subjectInputsContainer" class="d-flex flex-column gap-2">
-                                <!-- Populated dynamically based on columns -->
-                            </div>
+                            <label class="form-label small fw-bold">বিষয়ভিত্তিক কলাম শিরোনাম:</label>
+                            <div id="subjectInputsContainer" class="d-flex flex-column gap-2"></div>
                         </div>
                     </div>
 
                     <!-- TAB 3: ROLL & SET -->
                     <div class="tab-pane fade" id="tabRollSet">
                         <div class="mb-3">
-                            <label class="form-label fw-bold">রোল নম্বরের ডিজিট (Digits):</label>
-                            <select class="form-select" id="cfgRollDigits" onchange="updatePreview()">
-                                <option value="4">৪ ডিজিট (যেমন: ১০০০)</option>
-                                <option value="5">৫ ডিজিট (যেমন: ১০০০০)</option>
-                                <option value="6" selected>৬ ডিজিট (স্ট্যান্ডার্ড যেমন: ২৬৪০০৩)</option>
+                            <label class="form-label small fw-bold">রোল নম্বরের ডিজিট সংখ্যা:</label>
+                            <select class="form-select form-select-sm" id="cfgRollDigits" onchange="renderSheetDOM()">
+                                <option value="4">৪ ডিজিট</option>
+                                <option value="5">৫ ডিজিট</option>
+                                <option value="6" selected>৬ ডিজিট (স্ট্যান্ডার্ড)</option>
                                 <option value="8">৮ ডিজিট</option>
                             </select>
-                            <small class="text-muted">শিক্ষার্থীরা উপরে ফাঁকা ঘরে রোল লিখবে এবং নিচে ০-৯ বৃত্ত ভরাট করবে।</small>
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label fw-bold">প্রশ্নপত্রের সেট কোড (Set Codes):</label>
-                            <select class="form-select" id="cfgSets" onchange="updatePreview()">
-                                <option value="0">কোনো সেট থাকবে না (সিঙ্গেল সেট)</option>
+                            <label class="form-label small fw-bold">প্রশ্নপত্রের সেট কোড:</label>
+                            <select class="form-select form-select-sm" id="cfgSets" onchange="renderSheetDOM()">
+                                <option value="0">কোনো সেট থাকবে না</option>
                                 <option value="2">২টি সেট (A, B)</option>
                                 <option value="4" selected>৪টি সেট (A, B, C, D)</option>
                             </select>
                         </div>
                     </div>
 
+                    <!-- TAB 4: DRAG & POSITION CONTROLS -->
+                    <div class="tab-pane fade" id="tabPositioning">
+                        <div class="p-2 bg-light rounded border mb-3">
+                            <div class="small fw-bold text-muted mb-1">নির্বাচিত ব্লক (Selected Block):</div>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h6 class="fw-bold text-primary mb-0" id="selBlockTitle">রোল নম্বর গ্রিড</h6>
+                                <span class="badge bg-primary" id="selBlockBadge">roll_grid</span>
+                            </div>
+                        </div>
+
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label small text-muted mb-0">X পজিশন (বাম থেকে):</label>
+                                <div class="input-group input-group-sm">
+                                    <input type="number" class="form-control" id="pos_x" oninput="applyManualPosition()">
+                                    <span class="input-group-text">px</span>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small text-muted mb-0">Y পজিশন (উপর থেকে):</label>
+                                <div class="input-group input-group-sm">
+                                    <input type="number" class="form-control" id="pos_y" oninput="applyManualPosition()">
+                                    <span class="input-group-text">px</span>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small text-muted mb-0">প্রস্থ (Width):</label>
+                                <div class="input-group input-group-sm">
+                                    <input type="number" class="form-control" id="pos_w" oninput="applyManualPosition()">
+                                    <span class="input-group-text">px</span>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small text-muted mb-0">উচ্চতা (Height):</label>
+                                <div class="input-group input-group-sm">
+                                    <input type="number" class="form-control" id="pos_h" oninput="applyManualPosition()">
+                                    <span class="input-group-text">px</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- NUDGE BUTTONS -->
+                        <div class="mb-3 text-center">
+                            <label class="form-label small fw-bold text-muted d-block">পজিশন নাড়াচাড়া করুন (১ পিক্সেল স্টেপ):</label>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-secondary" onclick="nudgeActiveBlock(0, -5)" title="উপরে"><i class="fa fa-arrow-up"></i></button>
+                                <button type="button" class="btn btn-outline-secondary" onclick="nudgeActiveBlock(0, 5)" title="নিচে"><i class="fa fa-arrow-down"></i></button>
+                                <button type="button" class="btn btn-outline-secondary" onclick="nudgeActiveBlock(-5, 0)" title="বামে"><i class="fa fa-arrow-left"></i></button>
+                                <button type="button" class="btn btn-outline-secondary" onclick="nudgeActiveBlock(5, 0)" title="ডানে"><i class="fa fa-arrow-right"></i></button>
+                            </div>
+                        </div>
+
+                        <div class="d-grid">
+                            <button type="button" class="btn btn-outline-danger btn-sm" onclick="resetBlockPositions()">
+                                <i class="fa fa-redo me-1"></i> স্ট্যান্ডার্ড পজিশনে রিসেট করুন
+                            </button>
+                        </div>
+                    </div>
+
                 </div>
             </div>
 
-            <div class="card-footer bg-light p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                    <span class="small text-muted"><i class="fa fa-magic text-warning me-1"></i> ডানপাশে লাইভ প্রিভিউ প্রদর্শিত হচ্ছে</span>
-                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="resetToDefaults()">
-                        <i class="fa fa-redo me-1"></i> ডিফল্ট রিসেট
-                    </button>
-                </div>
+            <div class="card-footer bg-light p-2 text-center">
+                <small class="text-muted"><i class="fa fa-mouse-pointer text-primary me-1"></i> শিটের যেকোনো ব্লকে ক্লিক করে সরাসরি মাউস দিয়ে টেনে (Drag) সরিয়ে নিন।</small>
             </div>
         </div>
     </div>
 
-    <!-- RIGHT: LIVE INTERACTIVE A4 PREVIEW -->
-    <div class="col-lg-7">
+    <!-- RIGHT: INTERACTIVE A4 CANVAS VIEWPORT -->
+    <div class="col-lg-8">
         <div class="d-flex justify-content-between align-items-center mb-2 px-1">
-            <div class="small fw-bold text-muted">
-                <i class="fa fa-eye text-primary me-1"></i> A4 ওএমআর শিট প্রিভিউ (Vector Preview):
+            <div class="d-flex align-items-center gap-2">
+                <span class="small fw-bold text-light"><i class="fa fa-desktop text-info me-1"></i> A4 ওএমআর শিট ক্যানভাস:</span>
+                <span class="badge bg-secondary" id="zoomLevelBadge">ফিট (Fit)</span>
             </div>
             <!-- ZOOM CONTROLS -->
             <div class="btn-group btn-group-sm">
-                <button type="button" class="btn btn-outline-secondary" onclick="setZoom(0.55)">৫৫%</button>
-                <button type="button" class="btn btn-outline-secondary active" id="btnZoom70" onclick="setZoom(0.70)">৭০%</button>
-                <button type="button" class="btn btn-outline-secondary" onclick="setZoom(0.85)">৮৫%</button>
-                <button type="button" class="btn btn-outline-secondary" onclick="setZoom(1.0)">১০০%</button>
+                <button type="button" class="btn btn-outline-light active" id="btnZoomFit" onclick="autoFitSheet()"><i class="fa fa-expand me-1"></i> ফিট</button>
+                <button type="button" class="btn btn-outline-light" onclick="setZoomScale(0.70)">৭০%</button>
+                <button type="button" class="btn btn-outline-light" onclick="setZoomScale(0.85)">৮৫%</button>
+                <button type="button" class="btn btn-outline-light" onclick="setZoomScale(1.0)">১০০%</button>
             </div>
         </div>
 
-        <div class="preview-container">
-            <iframe id="sheetPreviewIframe" class="preview-frame" src="{% url 'dashboard:sheet_print' %}"></iframe>
+        <div class="sheet-viewport" id="sheetViewport">
+            <div class="sheet-zoom-wrapper" id="sheetZoomWrapper">
+                <!-- THE A4 OMR SHEET (794 x 1123) -->
+                <div class="omr-a4-canvas theme-red" id="omrA4Sheet">
+                    <!-- 4 CORNER MARKERS -->
+                    <div class="corner-marker tl"></div>
+                    <div class="corner-marker tr"></div>
+                    <div class="corner-marker bl"></div>
+                    <div class="corner-marker br"></div>
+
+                    <!-- TIMING TRACK -->
+                    <div class="timing-bar-track" id="timingBarTrack"></div>
+
+                    <!-- 1. HEADER BLOCK -->
+                    <div class="designer-block" id="block_header" onmousedown="onBlockMouseDown(event, 'header')">
+                        <div class="block-drag-handle"><i class="fa fa-arrows-alt me-1"></i>শিরোনাম ব্লক</div>
+                        <div class="block-inner-content inst-header-content">
+                            <h1 class="inst-main-title" id="dispTitle">Admission Challenge</h1>
+                            <p class="inst-sub-title" id="dispTagline">বিশ্ববিদ্যালয় ভর্তি কোচিং</p>
+                            <div><span class="inst-banner-pill" id="dispExamBanner">মডেল টেস্ট ওএমআর মূল্যায়ন শিট</span></div>
+                        </div>
+                    </div>
+
+                    <!-- 2. STUDENT INFO BLOCK -->
+                    <div class="designer-block" id="block_info" onmousedown="onBlockMouseDown(event, 'info')">
+                        <div class="block-drag-handle"><i class="fa fa-arrows-alt me-1"></i>শিক্ষার্থীর তথ্য ও নির্দেশনাবলী</div>
+                        <div class="block-inner-content">
+                            <div class="info-container-box">
+                                <div>
+                                    <div class="info-line-row">
+                                        <span class="info-lbl">শিক্ষার্থীর নাম:</span>
+                                        <div class="info-dotted-line"></div>
+                                    </div>
+                                    <div class="info-line-row">
+                                        <span class="info-lbl">পরীক্ষার তারিখ:</span>
+                                        <div class="info-dotted-line"></div>
+                                    </div>
+                                    <div class="info-line-row">
+                                        <span class="info-lbl">কক্ষ নং:</span>
+                                        <div class="info-dotted-line"></div>
+                                    </div>
+                                </div>
+                                <div style="font-size: 10px; background: var(--omr-light); border: 1px dashed var(--omr-primary); border-radius: 4px; padding: 4px 6px; line-height: 1.2;">
+                                    <strong><i class="fa fa-info-circle me-1"></i>নির্দেশনা:</strong> কালো বলপয়েন্ট কলম দিয়ে সম্পূর্ণ বৃত্ত ভরাট করুন। কাটাকাটি বা ভাঁজ করবেন না।
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 3. SET CODE BLOCK -->
+                    <div class="designer-block" id="block_set" onmousedown="onBlockMouseDown(event, 'set')">
+                        <div class="block-drag-handle"><i class="fa fa-arrows-alt me-1"></i>সেট কোড</div>
+                        <div class="block-inner-content">
+                            <div class="grid-card-border">
+                                <div class="grid-hdr">সেট</div>
+                                <div class="writein-cell" style="width: 100%;"></div>
+                                <div id="setBubblesContainer" style="padding: 4px; display: flex; flex-direction: column; gap: 4px; align-items: center; justify-content: space-around; flex-grow: 1;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 4. ROLL NUMBER GRID BLOCK -->
+                    <div class="designer-block" id="block_roll" onmousedown="onBlockMouseDown(event, 'roll')">
+                        <div class="block-drag-handle"><i class="fa fa-arrows-alt me-1"></i>রোল নম্বর গ্রিড</div>
+                        <div class="block-inner-content">
+                            <div class="grid-card-border">
+                                <div class="grid-hdr">রোল নম্বর (Roll No)</div>
+                                <div class="d-flex" id="rollWriteinContainer" style="border-bottom: 1.5px solid var(--omr-primary);"></div>
+                                <div class="d-flex justify-content-center p-1" id="rollBubblesMatrixContainer" style="gap: 3px; flex-grow: 1;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 5. QUESTIONS AREA BLOCK -->
+                    <div class="designer-block" id="block_questions" onmousedown="onBlockMouseDown(event, 'questions')">
+                        <div class="block-drag-handle"><i class="fa fa-arrows-alt me-1"></i>প্রশ্নোত্তর বাবল কলামসমূহ</div>
+                        <div class="block-inner-content">
+                            <div class="questions-wrapper" id="questionsColumnsContainer"></div>
+                        </div>
+                    </div>
+
+                    <!-- 6. FOOTER BLOCK -->
+                    <div class="designer-block" id="block_footer" onmousedown="onBlockMouseDown(event, 'footer')">
+                        <div class="block-drag-handle"><i class="fa fa-arrows-alt me-1"></i>ফুটার ও স্বাক্ষর</div>
+                        <div class="block-inner-content footer-container">
+                            <div class="sig-line-box">পরীক্ষার্থীর স্বাক্ষর</div>
+                            <div style="font-size: 10px; color: #6c757d;">OMR Engine Generated &bull; Do Not Fold</div>
+                            <div class="sig-line-box">কক্ষ পরিদর্শকের স্বাক্ষর</div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -251,183 +692,421 @@
 
 {% block extra_js %}
 <script>
+// ==============================================================================
+// 1. STATE & DEFAULT A4 BLOCK POSITIONS (794 x 1123)
+// ==============================================================================
 let currentTheme = 'theme-red';
-let currentZoom = 0.70;
+let currentZoomScale = 1.0;
+let activeSelectedBlockKey = 'roll';
 
-function selectTheme(themeName, element) {
-    currentTheme = themeName;
-    document.querySelectorAll('.color-swatch-label').forEach(el => el.classList.remove('active'));
-    element.classList.add('active');
-    updatePreview();
+const defaultPositions = {
+    header:    { x: 45,  y: 35,   w: 704, h: 90  },
+    info:      { x: 45,  y: 135,  w: 395, h: 185 },
+    set:       { x: 450, y: 135,  w: 42,  h: 185 },
+    roll:      { x: 502, y: 135,  w: 247, h: 185 },
+    questions: { x: 45,  y: 330,  w: 704, h: 695 },
+    footer:    { x: 45,  y: 1035, w: 704, h: 45  }
+};
+
+let blockPositions = JSON.parse(JSON.stringify(defaultPositions));
+
+const blockTitles = {
+    header: 'শিরোনাম ও ব্র্যান্ডিং',
+    info: 'শিক্ষার্থীর তথ্য ও নির্দেশনাবলী',
+    set: 'সেট কোড ব্লক',
+    roll: 'রোল নম্বর বাবল গ্রিড',
+    questions: 'প্রশ্নোত্তর কলামসমূহ',
+    footer: 'ফুটার ও স্বাক্ষর'
+};
+
+// ==============================================================================
+// 2. DRAG AND DROP ENGINE
+// ==============================================================================
+let activeDraggedBlock = null;
+let dragStartX = 0, dragStartY = 0;
+let blockStartCoords = { x: 0, y: 0 };
+
+function selectBlock(blockKey) {
+    activeSelectedBlockKey = blockKey;
+    document.querySelectorAll('.designer-block').forEach(el => el.classList.remove('active-block'));
+    const targetEl = document.getElementById(`block_${blockKey}`);
+    if (targetEl) targetEl.classList.add('active-block');
+
+    document.getElementById('selBlockTitle').innerText = blockTitles[blockKey] || blockKey;
+    document.getElementById('selBlockBadge').innerText = blockKey;
+
+    updatePositionInputs(blockKey);
+}
+
+function onBlockMouseDown(e, blockKey) {
+    if (e.button !== 0) return; // Left click only
+    e.stopPropagation();
+    selectBlock(blockKey);
+
+    activeDraggedBlock = blockKey;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    blockStartCoords = { x: blockPositions[blockKey].x, y: blockPositions[blockKey].y };
+
+    const targetEl = document.getElementById(`block_${blockKey}`);
+    if (targetEl) targetEl.classList.add('dragging');
+
+    window.addEventListener('mousemove', onBlockMouseMove);
+    window.addEventListener('mouseup', onBlockMouseUp);
+}
+
+function onBlockMouseMove(e) {
+    if (!activeDraggedBlock) return;
+    const dx = (e.clientX - dragStartX) / currentZoomScale;
+    const dy = (e.clientY - dragStartY) / currentZoomScale;
+
+    const block = blockPositions[activeDraggedBlock];
+    let newX = Math.round(blockStartCoords.x + dx);
+    let newY = Math.round(blockStartCoords.y + dy);
+
+    // Bounds constraint inside 794 x 1123 A4 canvas
+    newX = Math.max(15, Math.min(794 - block.w - 15, newX));
+    newY = Math.max(15, Math.min(1123 - block.h - 15, newY));
+
+    block.x = newX;
+    block.y = newY;
+
+    applyBlockStyle(activeDraggedBlock);
+    updatePositionInputs(activeDraggedBlock);
+}
+
+function onBlockMouseUp() {
+    if (activeDraggedBlock) {
+        const targetEl = document.getElementById(`block_${activeDraggedBlock}`);
+        if (targetEl) targetEl.classList.remove('dragging');
+    }
+    activeDraggedBlock = null;
+    window.removeEventListener('mousemove', onBlockMouseMove);
+    window.removeEventListener('mouseup', onBlockMouseUp);
+}
+
+function applyBlockStyle(blockKey) {
+    const el = document.getElementById(`block_${blockKey}`);
+    const pos = blockPositions[blockKey];
+    if (el && pos) {
+        el.style.left = pos.x + 'px';
+        el.style.top = pos.y + 'px';
+        el.style.width = pos.w + 'px';
+        el.style.height = pos.h + 'px';
+    }
+}
+
+function updatePositionInputs(blockKey) {
+    const pos = blockPositions[blockKey];
+    if (pos) {
+        document.getElementById('pos_x').value = pos.x;
+        document.getElementById('pos_y').value = pos.y;
+        document.getElementById('pos_w').value = pos.w;
+        document.getElementById('pos_h').value = pos.h;
+    }
+}
+
+function applyManualPosition() {
+    const block = blockPositions[activeSelectedBlockKey];
+    if (block) {
+        block.x = parseInt(document.getElementById('pos_x').value) || block.x;
+        block.y = parseInt(document.getElementById('pos_y').value) || block.y;
+        block.w = parseInt(document.getElementById('pos_w').value) || block.w;
+        block.h = parseInt(document.getElementById('pos_h').value) || block.h;
+        applyBlockStyle(activeSelectedBlockKey);
+    }
+}
+
+function nudgeActiveBlock(dx, dy) {
+    const block = blockPositions[activeSelectedBlockKey];
+    if (block) {
+        block.x = Math.max(15, Math.min(794 - block.w - 15, block.x + dx));
+        block.y = Math.max(15, Math.min(1123 - block.h - 15, block.y + dy));
+        applyBlockStyle(activeSelectedBlockKey);
+        updatePositionInputs(activeSelectedBlockKey);
+    }
+}
+
+function resetBlockPositions() {
+    blockPositions = JSON.parse(JSON.stringify(defaultPositions));
+    Object.keys(blockPositions).forEach(applyBlockStyle);
+    updatePositionInputs(activeSelectedBlockKey);
+}
+
+// ==============================================================================
+// 3. AUTO-FIT & ZOOM SYSTEM (FIXES "SMALL IN CORNER")
+// ==============================================================================
+function autoFitSheet() {
+    const viewport = document.getElementById('sheetViewport');
+    const availW = viewport.clientWidth - 40;
+    const availH = viewport.clientHeight - 40;
+
+    const scaleW = availW / 794;
+    const scaleH = availH / 1123;
+    const bestScale = Math.min(scaleW, scaleH);
+
+    setZoomScale(bestScale, 'ফিট (Fit)');
+}
+
+function setZoomScale(scale, labelText = null) {
+    currentZoomScale = scale;
+    const wrapper = document.getElementById('sheetZoomWrapper');
+    const sheet = document.getElementById('omrA4Sheet');
+
+    wrapper.style.width = Math.round(794 * scale) + 'px';
+    wrapper.style.height = Math.round(1123 * scale) + 'px';
+
+    sheet.style.transform = `scale(${scale})`;
+
+    const badge = document.getElementById('zoomLevelBadge');
+    badge.innerText = labelText ? labelText : `${Math.round(scale * 100)}%`;
+}
+
+// ==============================================================================
+// 4. RENDER DOM ELEMENTS & DATA
+// ==============================================================================
+function setTheme(themeClass, btn) {
+    currentTheme = themeClass;
+    document.querySelectorAll('.color-swatch-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    document.getElementById('omrA4Sheet').className = `omr-a4-canvas ${themeClass}`;
 }
 
 function handleQuestionCountChange() {
     const totalQ = parseInt(document.getElementById('cfgTotalQ').value);
     const colsSelect = document.getElementById('cfgCols');
-    
-    // Auto suggest best column count
-    if (totalQ <= 25) {
-        colsSelect.value = '1';
-    } else if (totalQ <= 50) {
-        colsSelect.value = '2';
-    } else if (totalQ <= 75) {
-        colsSelect.value = '3';
-    } else {
-        colsSelect.value = '4';
-    }
+    if (totalQ <= 25) colsSelect.value = '1';
+    else if (totalQ <= 50) colsSelect.value = '2';
+    else if (totalQ <= 75) colsSelect.value = '3';
+    else colsSelect.value = '4';
     updateSubjectInputs();
 }
 
 function updateSubjectInputs() {
     const cols = parseInt(document.getElementById('cfgCols').value);
     const container = document.getElementById('subjectInputsContainer');
-    const existingValues = Array.from(container.querySelectorAll('input')).map(inp => inp.value);
-    
-    const defaults = ['বাংলা', 'ইংরেজি', 'সাধারণ জ্ঞান', 'গণিত'];
+    const existing = Array.from(container.querySelectorAll('input')).map(i => i.value);
+    const defs = ['বাংলা', 'ইংরেজি', 'সাধারণ জ্ঞান', 'গণিত'];
     container.innerHTML = '';
 
     for (let i = 0; i < cols; i++) {
-        const val = existingValues[i] || defaults[i] || `কলাম ${i + 1}`;
+        const val = existing[i] || defs[i] || `কলাম ${i + 1}`;
         const div = document.createElement('div');
         div.className = 'input-group input-group-sm';
         div.innerHTML = `
-            <span class="input-group-text font-monospace" style="min-width: 80px;">কলাম ${i + 1}:</span>
-            <input type="text" class="form-control subject-input" value="${val}" placeholder="বিষয়ের নাম" oninput="updatePreview()">
+            <span class="input-group-text px-2 small">কলাম ${i + 1}:</span>
+            <input type="text" class="form-control subject-input" value="${val}" oninput="renderSheetDOM()">
         `;
         container.appendChild(div);
     }
-    updatePreview();
+    renderSheetDOM();
 }
 
-function getSubjectNames() {
-    const inputs = document.querySelectorAll('.subject-input');
-    return Array.from(inputs).map(inp => inp.value.trim() || 'সাধারণ');
+function renderSheetDOM() {
+    // 1. Text & Branding
+    document.getElementById('dispTitle').innerText = document.getElementById('cfgTitle').value.trim() || 'Admission Challenge';
+    document.getElementById('dispTagline').innerText = document.getElementById('cfgTagline').value.trim() || '';
+    document.getElementById('dispExamBanner').innerText = document.getElementById('cfgExamName').value.trim() || 'মডেল টেস্ট';
+
+    // 2. Timing ticks
+    const timingTrack = document.getElementById('timingBarTrack');
+    timingTrack.innerHTML = '';
+    for (let i = 0; i < 35; i++) {
+        const t = document.createElement('div');
+        t.className = 'timing-tick-mark';
+        timingTrack.appendChild(t);
+    }
+
+    // 3. Set Code block
+    const setCount = parseInt(document.getElementById('cfgSets').value);
+    const setBlock = document.getElementById('block_set');
+    const setBubbles = document.getElementById('setBubblesContainer');
+    setBubbles.innerHTML = '';
+    const setLetters = ['A', 'B', 'C', 'D', 'E'];
+
+    if (setCount === 0) {
+        setBlock.style.display = 'none';
+    } else {
+        setBlock.style.display = 'block';
+        for (let s = 0; s < setCount; s++) {
+            const b = document.createElement('div');
+            b.className = 'omr-bubble';
+            b.innerText = setLetters[s];
+            setBubbles.appendChild(b);
+        }
+    }
+
+    // 4. Roll Number block
+    const rollDigits = parseInt(document.getElementById('cfgRollDigits').value);
+    const rollWritein = document.getElementById('rollWriteinContainer');
+    const rollMatrix = document.getElementById('rollBubblesMatrixContainer');
+    rollWritein.innerHTML = '';
+    rollMatrix.innerHTML = '';
+
+    // Adjust roll block width proportionally
+    blockPositions.roll.w = Math.max(180, rollDigits * 36);
+    applyBlockStyle('roll');
+
+    for (let c = 0; c < rollDigits; c++) {
+        const wb = document.createElement('div');
+        wb.className = 'writein-cell flex-fill';
+        rollWritein.appendChild(wb);
+
+        const col = document.createElement('div');
+        col.className = 'd-flex flex-column align-items-center flex-fill';
+        col.style.gap = '3px';
+        for (let r = 0; r <= 9; r++) {
+            const b = document.createElement('div');
+            b.className = 'omr-bubble';
+            b.innerText = r;
+            col.appendChild(b);
+        }
+        rollMatrix.appendChild(col);
+    }
+
+    // 5. Questions Columns
+    const totalQ = parseInt(document.getElementById('cfgTotalQ').value);
+    const numCols = parseInt(document.getElementById('cfgCols').value);
+    const optCount = parseInt(document.querySelector('input[name="optCount"]:checked').value);
+    const qContainer = document.getElementById('questionsColumnsContainer');
+    qContainer.innerHTML = '';
+
+    const subInputs = Array.from(document.querySelectorAll('.subject-input')).map(i => i.value.trim() || 'সাধারণ');
+    const qPerCol = Math.ceil(totalQ / numCols);
+    const optLetters = ['A', 'B', 'C', 'D', 'E'];
+
+    let currentQ = 1;
+    for (let c = 0; c < numCols; c++) {
+        const startQ = currentQ;
+        const endQ = Math.min(startQ + qPerCol - 1, totalQ);
+        currentQ = endQ + 1;
+
+        const colDiv = document.createElement('div');
+        colDiv.className = 'q-col-card';
+
+        const hdr = document.createElement('div');
+        hdr.className = 'q-col-hdr';
+        hdr.innerText = subInputs[c] || `কলাম ${c + 1} (${startQ} - ${endQ})`;
+        colDiv.appendChild(hdr);
+
+        const qList = document.createElement('div');
+        qList.className = 'q-list-rows';
+
+        for (let q = startQ; q <= endQ; q++) {
+            const row = document.createElement('div');
+            row.className = 'q-item-row';
+
+            const num = document.createElement('div');
+            num.className = 'q-label-no';
+            num.innerText = q;
+            row.appendChild(num);
+
+            const bubblesDiv = document.createElement('div');
+            bubblesDiv.className = 'd-flex gap-1';
+            for (let o = 0; o < optCount; o++) {
+                const b = document.createElement('div');
+                b.className = 'omr-bubble';
+                b.innerText = optLetters[o];
+                bubblesDiv.appendChild(b);
+            }
+            row.appendChild(bubblesDiv);
+            qList.appendChild(row);
+        }
+
+        colDiv.appendChild(qList);
+        qContainer.appendChild(colDiv);
+    }
+
+    // Apply all positions
+    Object.keys(blockPositions).forEach(applyBlockStyle);
 }
 
-function getConfigPayload() {
+// ==============================================================================
+// 5. PRINT & TEMPLATE EXPORT
+// ==============================================================================
+function triggerPrint() {
     const totalQ = parseInt(document.getElementById('cfgTotalQ').value);
     const cols = parseInt(document.getElementById('cfgCols').value);
     const optCount = parseInt(document.querySelector('input[name="optCount"]:checked').value);
     const rollDigits = parseInt(document.getElementById('cfgRollDigits').value);
     const sets = parseInt(document.getElementById('cfgSets').value);
+    const subInputs = Array.from(document.querySelectorAll('.subject-input')).map(i => i.value.trim() || 'সাধারণ');
 
-    return {
+    const params = new URLSearchParams({
         title: document.getElementById('cfgTitle').value.trim() || 'Admission Challenge',
         tagline: document.getElementById('cfgTagline').value.trim() || '',
         examName: document.getElementById('cfgExamName').value.trim() || 'মডেল টেস্ট',
         theme: currentTheme,
-        totalQuestions: totalQ,
-        columnsCount: cols,
-        optionsCount: optCount,
+        qCount: totalQ,
+        cols: cols,
+        opts: optCount,
         rollDigits: rollDigits,
-        setCount: sets,
-        subjects: getSubjectNames().join(',')
-    };
+        sets: sets,
+        subjects: subInputs.join(','),
+        autoprint: '1'
+    });
+
+    window.open(`{% url 'dashboard:sheet_print' %}?` + params.toString(), '_blank');
 }
 
-function updatePreview() {
-    const config = getConfigPayload();
-    const iframe = document.getElementById('sheetPreviewIframe');
-    if (iframe && iframe.contentWindow) {
-        iframe.contentWindow.postMessage({
-            type: 'UPDATE_OMR_CONFIG',
-            config: config
-        }, '*');
-    }
-}
-
-function setZoom(scale) {
-    currentZoom = scale;
-    const iframe = document.getElementById('sheetPreviewIframe');
-    iframe.style.transform = `scale(${scale})`;
-    
-    // adjust parent height
-    const container = document.querySelector('.preview-container');
-    const scaledHeight = 1123 * scale;
-}
-
-function printOMRSheet() {
-    const config = getConfigPayload();
-    const query = new URLSearchParams(config);
-    query.set('autoprint', '1');
-    const printUrl = `{% url 'dashboard:sheet_print' %}?` + query.toString();
-    window.open(printUrl, '_blank');
-}
-
-// ==============================================================================
-// SAVE AS OMR EVALUATION TEMPLATE IN templates_store/
-// ==============================================================================
 async function saveAsOMRTemplate() {
-    const config = getConfigPayload();
-    const defaultTemplateName = `${config.title.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${config.totalQuestions}q`;
-    const promptName = prompt("এই ওএমআর শিটের টেমপ্লেট ফাইলের নাম দিন (যেমন: offline_exam_100q):", defaultTemplateName);
-    
+    const totalQ = parseInt(document.getElementById('cfgTotalQ').value);
+    const cols = parseInt(document.getElementById('cfgCols').value);
+    const rollDigits = parseInt(document.getElementById('cfgRollDigits').value);
+    const sets = parseInt(document.getElementById('cfgSets').value);
+    const title = document.getElementById('cfgTitle').value.trim() || 'Admission Challenge';
+
+    const defaultName = `${title.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${totalQ}q`;
+    const promptName = prompt("এই ওএমআর শিট টেমপ্লেটের ফাইলের নাম দিন (যেমন: offline_exam_100q):", defaultName);
     if (!promptName) return;
 
-    // Calculate approximate normalized coordinates for 794 x 1123 A4 dimensions
-    const width = 794;
-    const height = 1123;
-    const rollCols = config.rollDigits;
-    const sets = config.setCount;
-    const totalQ = config.totalQuestions;
-    const numCols = config.columnsCount;
-    const qPerCol = Math.ceil(totalQ / numCols);
+    // Read exact positions of blocks
+    const rollPos = blockPositions.roll;
+    const setPos = blockPositions.set;
+    const qPos = blockPositions.questions;
 
-    // Bounding box calculations
-    const idGridW = Math.round(rollCols * 24);
-    const idGridX = width - idGridW - 40;
-    const idGridY = 75;
-    const idGridH = 260;
-
-    const setGridW = 34;
-    const setGridX = idGridX - setGridW - 18;
-    const setGridY = idGridY;
-    const setGridH = Math.max(sets * 30, 60);
-
+    // Subdivide question columns
+    const qPerCol = Math.ceil(totalQ / cols);
+    const subInputs = Array.from(document.querySelectorAll('.subject-input')).map(i => i.value.trim() || 'সাধারণ');
     const answerCols = [];
-    const subjectsList = config.subjects.split(',');
-    const marginX = 40;
-    const availableW = width - (marginX * 2);
-    const colW = Math.round((availableW - ((numCols - 1) * 15)) / numCols);
-    const colY = 380;
-    const colH = height - colY - 50;
+    const colW = Math.round((qPos.w - ((cols - 1) * 8)) / cols);
 
     let curQ = 1;
-    for (let c = 0; c < numCols; c++) {
-        const qStart = curQ;
-        const qEnd = Math.min(qStart + qPerCol - 1, totalQ);
-        curQ = qEnd + 1;
-        const colX = marginX + c * (colW + 15);
+    for (let c = 0; c < cols; c++) {
+        const startQ = curQ;
+        const endQ = Math.min(startQ + qPerCol - 1, totalQ);
+        curQ = endQ + 1;
+        const colX = qPos.x + c * (colW + 8);
 
         answerCols.push({
             column_index: c + 1,
-            subject: subjectsList[c] || `কলাম ${c + 1}`,
-            q_start: qStart,
-            q_end: qEnd,
+            subject: subInputs[c] || `কলাম ${c + 1}`,
+            q_start: startQ,
+            q_end: endQ,
             x: colX,
-            y: colY,
+            y: qPos.y + 24, // accounting for header
             w: colW,
-            h: colH
+            h: qPos.h - 24
         });
     }
 
     const payload = {
         template_name: promptName,
-        title: `${config.title} - ${config.totalQuestions}Q`,
-        dimensions: { width: width, height: height },
+        title: `${title} - ${totalQ}Q`,
+        dimensions: { width: 794, height: 1123 },
         id_grid: {
-            x: idGridX,
-            y: idGridY,
-            w: idGridW,
-            h: idGridH,
-            columns: rollCols,
+            x: rollPos.x,
+            y: rollPos.y + 24,
+            w: rollPos.w,
+            h: rollPos.h - 24,
+            columns: rollDigits,
             rows: 10
         },
         set_region: {
-            x: setGridX,
-            y: setGridY,
-            w: setGridW,
-            h: setGridH,
+            x: setPos.x,
+            y: setPos.y + 24,
+            w: setPos.w,
+            h: setPos.h - 24,
             rows: sets > 0 ? sets : 1,
             columns: 1
         },
@@ -450,28 +1129,22 @@ async function saveAsOMRTemplate() {
             alert('ত্রুটি: ' + res.error);
         }
     } catch (e) {
-        alert('সার্ভার যোগাযোগে ব্যর্থ: ' + e.message);
+        alert('সার্ভার যোগাযোগে ত্রুটি: ' + e.message);
     }
 }
 
-function resetToDefaults() {
-    document.getElementById('cfgTitle').value = '{{ default_title }}';
-    document.getElementById('cfgTagline').value = '{{ default_tagline }}';
-    document.getElementById('cfgExamName').value = 'মডেল টেস্ট ওএমআর শিট';
-    document.getElementById('cfgTotalQ').value = '100';
-    document.getElementById('cfgCols').value = '4';
-    document.getElementById('opt4').checked = true;
-    document.getElementById('cfgRollDigits').value = '6';
-    document.getElementById('cfgSets').value = '4';
-    selectTheme('theme-red', document.querySelectorAll('.color-swatch-label')[0]);
-    updateSubjectInputs();
-}
-
-// Initialization on page load
+// Initial setup on load
 document.addEventListener('DOMContentLoaded', () => {
     updateSubjectInputs();
-    setZoom(currentZoom);
-    setTimeout(updatePreview, 600);
+    selectBlock('roll');
+    setTimeout(autoFitSheet, 150);
+});
+
+window.addEventListener('resize', () => {
+    const badge = document.getElementById('zoomLevelBadge');
+    if (badge && badge.innerText.includes('ফিট')) {
+        autoFitSheet();
+    }
 });
 </script>
 {% endblock %}
