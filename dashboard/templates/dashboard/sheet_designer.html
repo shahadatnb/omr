@@ -2,7 +2,7 @@
 
 {% block title %}ওএমআর শিট ডিজাইনার ও প্রিন্ট জেনারেটর | OMR Engine{% endblock %}
 
-{% block extra_css %}
+{% block extra_head %}
 <style>
     /* WORKSPACE SPLIT */
     .designer-panel {
@@ -916,12 +916,17 @@ function resetBlockPositions() {
 // ==============================================================================
 function autoFitSheet() {
     const viewport = document.getElementById('sheetViewport');
-    const availW = viewport.clientWidth - 40;
-    const availH = viewport.clientHeight - 40;
+    if (!viewport) return;
+    const availW = Math.max(300, viewport.clientWidth - 40);
+    const availH = Math.max(400, viewport.clientHeight - 40);
 
     const scaleW = availW / 794;
     const scaleH = availH / 1123;
-    const bestScale = Math.min(scaleW, scaleH);
+    let bestScale = Math.min(scaleW, scaleH);
+    if (isNaN(bestScale) || bestScale <= 0.1) {
+        bestScale = 0.65;
+    }
+    bestScale = Math.max(0.3, Math.min(1.2, bestScale));
 
     setZoomScale(bestScale, 'ফিট (Fit)');
 }
@@ -1216,6 +1221,10 @@ document.addEventListener('DOMContentLoaded', () => {
     updateSubjectInputs();
     selectBlock('roll');
     setTimeout(autoFitSheet, 150);
+});
+
+window.addEventListener('load', () => {
+    setTimeout(autoFitSheet, 50);
 });
 
 window.addEventListener('resize', () => {
