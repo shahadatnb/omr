@@ -71,5 +71,10 @@ ehthumbs.db
 *.swp
 *.swo
 
+# 11. Templates Store (Ignore everything except default_100q.json)
+templates_store/*
+!templates_store/default_100q.json
+
+
 
 

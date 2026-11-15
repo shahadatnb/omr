@@ -1920,6 +1920,12 @@ def modem_test_ajax(request):
     port = request.POST.get('com_port', '').strip()
     baud_rate = int(request.POST.get('baud_rate', 115200))
     res = test_modem(port, baudrate=baud_rate)
+    if res.get('success'):
+        # Automatically persist the tested and working port so the user doesn't have to worry about manual save
+        settings_obj = ModemSettings.get_settings()
+        settings_obj.com_port = port
+        settings_obj.baud_rate = baud_rate
+        settings_obj.save(update_fields=['com_port', 'baud_rate'])
     return JsonResponse(res)
 
 
@@ -1940,6 +1946,10 @@ def modem_test_send_ajax(request):
         return JsonResponse({'success': False, 'error': 'এসএমএস বার্তা লিখুন'}, status=400)
 
     res = send_sms_via_modem(port, baud_rate, recipient, message)
+    if res.get('success') and port != settings_obj.com_port:
+        settings_obj.com_port = port
+        settings_obj.baud_rate = baud_rate
+        settings_obj.save(update_fields=['com_port', 'baud_rate'])
     return JsonResponse(res)
 
 
@@ -1948,46 +1958,85 @@ def standalone_sms_preview_ajax(request, exam_id):
     Returns preview data for sending SMS to an exam's students:
     - Total students evaluated
     - Count of students with valid mobile numbers (from OMR bubble or manual)
-    - Sample rendered SMS message for up to 3 students
+    - Full list of student queue items for sequential progress
+    - Sample rendered SMS message
     """
     exam = get_object_or_404(StandaloneExam, id=exam_id)
     settings_obj = ModemSettings.get_settings()
     institute = InstituteSettings.get_settings()
 
     results = exam.results.all().order_by('rank', '-marks')
-    total_count = results.count()
+    total_students = results.count()
 
-    valid_phone_count = 0
-    preview_samples = []
+    ready_count = 0
+    missing_count = 0
+    sent_count = 0
+    failed_count = 0
+    pending_count = 0
+    students_queue = []
+    preview_sample = None
 
     for r in results:
         target_phone = r.phone_number or r.roll_no
         norm = normalize_bd_phone(target_phone)
-        if norm['is_valid']:
-            valid_phone_count += 1
-            if len(preview_samples) < 3:
+        is_valid_phone = norm['is_valid']
+
+        if is_valid_phone:
+            ready_count += 1
+            if r.sms_status == 'sent':
+                sent_count += 1
+            elif r.sms_status == 'failed':
+                failed_count += 1
+                pending_count += 1
+            else:
+                pending_count += 1
+
+            if preview_sample is None:
                 rendered_text = render_sms_template(settings_obj.sms_template, exam, r, institute)
-                preview_samples.append({
-                    'result_id': r.id,
-                    'roll_no': r.roll_no,
-                    'student_name': r.student_name or f"Roll: {r.roll_no}",
+                preview_sample = {
                     'phone': norm['local'],
-                    'marks': round(r.marks, 2),
-                    'rank': r.rank,
-                    'sms_text': rendered_text
-                })
+                    'text': rendered_text
+                }
+        else:
+            missing_count += 1
+
+        students_queue.append({
+            'id': r.id,
+            'roll': r.roll_no,
+            'phone': norm['local'] if is_valid_phone else '',
+            'status': r.sms_status or 'pending',
+            'marks': round(r.marks, 2),
+            'rank': r.rank
+        })
 
     return JsonResponse({
         'success': True,
         'exam_title': exam.title,
-        'total_count': total_count,
-        'valid_phone_count': valid_phone_count,
-        'no_phone_count': total_count - valid_phone_count,
-        'com_port': settings_obj.com_port,
+        'total_students': total_students,
+        'total_count': total_students,
+        'ready_count': ready_count,
+        'valid_phone_count': ready_count,
+        'missing_count': missing_count,
+        'no_phone_count': missing_count,
+        'sent_count': sent_count,
+        'failed_count': failed_count,
+        'pending_count': pending_count,
+        'modem_configured': bool(settings_obj.com_port),
+        'port': settings_obj.com_port,
         'is_enabled': settings_obj.is_enabled,
-        'preview_samples': preview_samples,
+        'students': students_queue,
+        'preview_sample': preview_sample,
         'sms_template': settings_obj.sms_template
     })
+
+
+@require_POST
+def standalone_send_single_sms_by_result_id_ajax(request, result_id):
+    """
+    Alias AJAX endpoint to send SMS by result_id without exam_id in URL.
+    """
+    result = get_object_or_404(StandaloneResult, id=result_id)
+    return standalone_send_single_sms_ajax(request, result.exam.id, result.id)
 
 
 @require_POST

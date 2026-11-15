@@ -56,6 +56,8 @@ urlpatterns = [
     path('standalone/result/<int:result_id>/reprocess-ajax/', views.standalone_reprocess_result_ajax, name='standalone_reprocess_result_ajax'),
     # Standalone SMS & Contact Routes
     path('standalone/<int:exam_id>/sms-preview-ajax/', views.standalone_sms_preview_ajax, name='standalone_sms_preview_ajax'),
+    path('standalone/exam/<int:exam_id>/sms-preview-ajax/', views.standalone_sms_preview_ajax),
     path('standalone/<int:exam_id>/send-single-sms-ajax/<int:result_id>/', views.standalone_send_single_sms_ajax, name='standalone_send_single_sms_ajax'),
+    path('standalone/result/<int:result_id>/send-sms-ajax/', views.standalone_send_single_sms_by_result_id_ajax, name='standalone_send_single_sms_by_result_id_ajax'),
     path('standalone/<int:exam_id>/import-contacts-ajax/', views.standalone_import_contacts_ajax, name='standalone_import_contacts_ajax'),
 ]

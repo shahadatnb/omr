@@ -68,22 +68,18 @@ def split_grid(roi, rows, cols):
         return [[np.array([])] * cols for _ in range(rows)]
 
     h, w = roi.shape[:2]
-    cell_h = h // rows
-    cell_w = w // cols
-
-    if cell_h == 0 or cell_w == 0:
-        logger.error(f"Cell size too small: {cell_w}x{cell_h} for {cols}x{rows} grid in {w}x{h} ROI")
+    if rows <= 0 or cols <= 0 or h < rows or w < cols:
+        logger.error(f"Invalid grid dimensions: {w}x{h} for {cols}x{rows} grid")
         return [[np.array([])] * cols for _ in range(rows)]
 
     cells = []
     for r in range(rows):
+        y1 = int(round(r * h / rows))
+        y2 = int(round((r + 1) * h / rows))
         row_cells = []
         for c in range(cols):
-            # Cell boundaries হিসাব করো
-            y1 = r * cell_h
-            y2 = (r + 1) * cell_h
-            x1 = c * cell_w
-            x2 = (c + 1) * cell_w
+            x1 = int(round(c * w / cols))
+            x2 = int(round((c + 1) * w / cols))
             cell = roi[y1:y2, x1:x2]
             row_cells.append(cell)
         cells.append(row_cells)

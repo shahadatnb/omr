@@ -245,52 +245,62 @@
             <div class="card shadow-sm mb-3 coord-card col-card">
                 <div class="card-body p-3">
                     <h6 class="fw-bold text-purple mb-2" style="color: #6f42c1;">
-                        <i class="fa fa-list-ol me-1"></i> ৩. উত্তর কলামসমূহ (১০০ প্রশ্ন)
+                        <i class="fa fa-list-ol me-1"></i> ৩. উত্তর কলামসমূহ ({% if template_data.answer_columns %}{{ template_data.answer_columns|length }}টি কলাম{% else %}৪টি কলাম{% endif %})
                     </h6>
 
-                    <!-- Col 1 -->
-                    <div class="mb-2 p-2 bg-light rounded">
-                        <div class="fw-bold small mb-1 text-primary">কলাম ১ (প্রশ্ন ১ – ২৫):</div>
-                        <div class="row g-2">
-                            <div class="col-3"><label class="small text-muted">X</label><input type="number" class="form-control form-control-sm" id="col1_x" value="78" oninput="redrawCanvas()"></div>
-                            <div class="col-3"><label class="small text-muted">Y</label><input type="number" class="form-control form-control-sm" id="col1_y" value="490" oninput="redrawCanvas()"></div>
-                            <div class="col-3"><label class="small text-muted">W</label><input type="number" class="form-control form-control-sm" id="col1_w" value="128" oninput="redrawCanvas()"></div>
-                            <div class="col-3"><label class="small text-muted">H</label><input type="number" class="form-control form-control-sm" id="col1_h" value="617" oninput="redrawCanvas()"></div>
+                    {% if template_data.answer_columns %}
+                        {% for col in template_data.answer_columns %}
+                        <div class="mb-2 p-2 bg-light rounded answer-col-block" data-col-index="{{ forloop.counter }}">
+                            <div class="fw-bold small mb-1 text-primary d-flex justify-content-between align-items-center">
+                                <span>কলাম {{ forloop.counter }} (প্রশ্ন {{ col.q_start }} – {{ col.q_end }}):</span>
+                                {% if col.subject %}<span class="badge bg-secondary">{{ col.subject }}</span>{% endif %}
+                            </div>
+                            <div class="row g-2">
+                                <div class="col-3"><label class="small text-muted">X</label><input type="number" class="form-control form-control-sm col-input-x" id="col{{ forloop.counter }}_x" value="{{ col.x }}" oninput="redrawCanvas()"></div>
+                                <div class="col-3"><label class="small text-muted">Y</label><input type="number" class="form-control form-control-sm col-input-y" id="col{{ forloop.counter }}_y" value="{{ col.y }}" oninput="redrawCanvas()"></div>
+                                <div class="col-3"><label class="small text-muted">W</label><input type="number" class="form-control form-control-sm col-input-w" id="col{{ forloop.counter }}_w" value="{{ col.w }}" oninput="redrawCanvas()"></div>
+                                <div class="col-3"><label class="small text-muted">H</label><input type="number" class="form-control form-control-sm col-input-h" id="col{{ forloop.counter }}_h" value="{{ col.h }}" oninput="redrawCanvas()"></div>
+                            </div>
                         </div>
-                    </div>
-
-                    <!-- Col 2 -->
-                    <div class="mb-2 p-2 bg-light rounded">
-                        <div class="fw-bold small mb-1 text-primary">কলাম ২ (প্রশ্ন ২৬ – ৫০):</div>
-                        <div class="row g-2">
-                            <div class="col-3"><label class="small text-muted">X</label><input type="number" class="form-control form-control-sm" id="col2_x" value="264" oninput="redrawCanvas()"></div>
-                            <div class="col-3"><label class="small text-muted">Y</label><input type="number" class="form-control form-control-sm" id="col2_y" value="489" oninput="redrawCanvas()"></div>
-                            <div class="col-3"><label class="small text-muted">W</label><input type="number" class="form-control form-control-sm" id="col2_w" value="128" oninput="redrawCanvas()"></div>
-                            <div class="col-3"><label class="small text-muted">H</label><input type="number" class="form-control form-control-sm" id="col2_h" value="618" oninput="redrawCanvas()"></div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="mb-2 p-2 bg-light rounded answer-col-block" data-col-index="1">
+                            <div class="fw-bold small mb-1 text-primary">কলাম ১ (প্রশ্ন ১ – ২৫):</div>
+                            <div class="row g-2">
+                                <div class="col-3"><label class="small text-muted">X</label><input type="number" class="form-control form-control-sm col-input-x" id="col1_x" value="78" oninput="redrawCanvas()"></div>
+                                <div class="col-3"><label class="small text-muted">Y</label><input type="number" class="form-control form-control-sm col-input-y" id="col1_y" value="490" oninput="redrawCanvas()"></div>
+                                <div class="col-3"><label class="small text-muted">W</label><input type="number" class="form-control form-control-sm col-input-w" id="col1_w" value="128" oninput="redrawCanvas()"></div>
+                                <div class="col-3"><label class="small text-muted">H</label><input type="number" class="form-control form-control-sm col-input-h" id="col1_h" value="617" oninput="redrawCanvas()"></div>
+                            </div>
                         </div>
-                    </div>
-
-                    <!-- Col 3 -->
-                    <div class="mb-2 p-2 bg-light rounded">
-                        <div class="fw-bold small mb-1 text-primary">কলাম ৩ (প্রশ্ন ৫১ – ৭৫):</div>
-                        <div class="row g-2">
-                            <div class="col-3"><label class="small text-muted">X</label><input type="number" class="form-control form-control-sm" id="col3_x" value="448" oninput="redrawCanvas()"></div>
-                            <div class="col-3"><label class="small text-muted">Y</label><input type="number" class="form-control form-control-sm" id="col3_y" value="493" oninput="redrawCanvas()"></div>
-                            <div class="col-3"><label class="small text-muted">W</label><input type="number" class="form-control form-control-sm" id="col3_w" value="128" oninput="redrawCanvas()"></div>
-                            <div class="col-3"><label class="small text-muted">H</label><input type="number" class="form-control form-control-sm" id="col3_h" value="614" oninput="redrawCanvas()"></div>
+                        <div class="mb-2 p-2 bg-light rounded answer-col-block" data-col-index="2">
+                            <div class="fw-bold small mb-1 text-primary">কলাম ২ (প্রশ্ন ২৬ – ৫০):</div>
+                            <div class="row g-2">
+                                <div class="col-3"><label class="small text-muted">X</label><input type="number" class="form-control form-control-sm col-input-x" id="col2_x" value="264" oninput="redrawCanvas()"></div>
+                                <div class="col-3"><label class="small text-muted">Y</label><input type="number" class="form-control form-control-sm col-input-y" id="col2_y" value="489" oninput="redrawCanvas()"></div>
+                                <div class="col-3"><label class="small text-muted">W</label><input type="number" class="form-control form-control-sm col-input-w" id="col2_w" value="128" oninput="redrawCanvas()"></div>
+                                <div class="col-3"><label class="small text-muted">H</label><input type="number" class="form-control form-control-sm col-input-h" id="col2_h" value="618" oninput="redrawCanvas()"></div>
+                            </div>
                         </div>
-                    </div>
-
-                    <!-- Col 4 -->
-                    <div class="mb-2 p-2 bg-light rounded">
-                        <div class="fw-bold small mb-1 text-primary">কলাম ৪ (প্রশ্ন ৭৬ – ১০০):</div>
-                        <div class="row g-2">
-                            <div class="col-3"><label class="small text-muted">X</label><input type="number" class="form-control form-control-sm" id="col4_x" value="633" oninput="redrawCanvas()"></div>
-                            <div class="col-3"><label class="small text-muted">Y</label><input type="number" class="form-control form-control-sm" id="col4_y" value="494" oninput="redrawCanvas()"></div>
-                            <div class="col-3"><label class="small text-muted">W</label><input type="number" class="form-control form-control-sm" id="col4_w" value="128" oninput="redrawCanvas()"></div>
-                            <div class="col-3"><label class="small text-muted">H</label><input type="number" class="form-control form-control-sm" id="col4_h" value="613" oninput="redrawCanvas()"></div>
+                        <div class="mb-2 p-2 bg-light rounded answer-col-block" data-col-index="3">
+                            <div class="fw-bold small mb-1 text-primary">কলাম ৩ (প্রশ্ন ৫১ – ৭৫):</div>
+                            <div class="row g-2">
+                                <div class="col-3"><label class="small text-muted">X</label><input type="number" class="form-control form-control-sm col-input-x" id="col3_x" value="448" oninput="redrawCanvas()"></div>
+                                <div class="col-3"><label class="small text-muted">Y</label><input type="number" class="form-control form-control-sm col-input-y" id="col3_y" value="493" oninput="redrawCanvas()"></div>
+                                <div class="col-3"><label class="small text-muted">W</label><input type="number" class="form-control form-control-sm col-input-w" id="col3_w" value="128" oninput="redrawCanvas()"></div>
+                                <div class="col-3"><label class="small text-muted">H</label><input type="number" class="form-control form-control-sm col-input-h" id="col3_h" value="614" oninput="redrawCanvas()"></div>
+                            </div>
                         </div>
-                    </div>
+                        <div class="mb-2 p-2 bg-light rounded answer-col-block" data-col-index="4">
+                            <div class="fw-bold small mb-1 text-primary">কলাম ৪ (প্রশ্ন ৭৬ – ১০০):</div>
+                            <div class="row g-2">
+                                <div class="col-3"><label class="small text-muted">X</label><input type="number" class="form-control form-control-sm col-input-x" id="col4_x" value="633" oninput="redrawCanvas()"></div>
+                                <div class="col-3"><label class="small text-muted">Y</label><input type="number" class="form-control form-control-sm col-input-y" id="col4_y" value="494" oninput="redrawCanvas()"></div>
+                                <div class="col-3"><label class="small text-muted">W</label><input type="number" class="form-control form-control-sm col-input-w" id="col4_w" value="128" oninput="redrawCanvas()"></div>
+                                <div class="col-3"><label class="small text-muted">H</label><input type="number" class="form-control form-control-sm col-input-h" id="col4_h" value="613" oninput="redrawCanvas()"></div>
+                            </div>
+                        </div>
+                    {% endif %}
 
                 </div>
             </div>
@@ -317,26 +327,17 @@ let currentScale = 1.0;
 
 // Set initial answer column values from template_data if available
 const templateData = {{ template_json_str|safe }};
-if (templateData && templateData.answer_columns && templateData.answer_columns.length >= 4) {
-    document.getElementById('col1_x').value = templateData.answer_columns[0].x;
-    document.getElementById('col1_y').value = templateData.answer_columns[0].y;
-    document.getElementById('col1_w').value = templateData.answer_columns[0].w;
-    document.getElementById('col1_h').value = templateData.answer_columns[0].h;
-
-    document.getElementById('col2_x').value = templateData.answer_columns[1].x;
-    document.getElementById('col2_y').value = templateData.answer_columns[1].y;
-    document.getElementById('col2_w').value = templateData.answer_columns[1].w;
-    document.getElementById('col2_h').value = templateData.answer_columns[1].h;
-
-    document.getElementById('col3_x').value = templateData.answer_columns[2].x;
-    document.getElementById('col3_y').value = templateData.answer_columns[2].y;
-    document.getElementById('col3_w').value = templateData.answer_columns[2].w;
-    document.getElementById('col3_h').value = templateData.answer_columns[2].h;
-
-    document.getElementById('col4_x').value = templateData.answer_columns[3].x;
-    document.getElementById('col4_y').value = templateData.answer_columns[3].y;
-    document.getElementById('col4_w').value = templateData.answer_columns[3].w;
-    document.getElementById('col4_h').value = templateData.answer_columns[3].h;
+if (templateData && templateData.answer_columns) {
+    templateData.answer_columns.forEach((col, idx) => {
+        const xEl = document.getElementById(`col${idx+1}_x`);
+        const yEl = document.getElementById(`col${idx+1}_y`);
+        const wEl = document.getElementById(`col${idx+1}_w`);
+        const hEl = document.getElementById(`col${idx+1}_h`);
+        if (xEl && col.x !== undefined) xEl.value = col.x;
+        if (yEl && col.y !== undefined) yEl.value = col.y;
+        if (wEl && col.w !== undefined) wEl.value = col.w;
+        if (hEl && col.h !== undefined) hEl.value = col.h;
+    });
 }
 
 // Initialize canvas dimensions from templateData or default
@@ -596,19 +597,22 @@ function redrawCanvas() {
     drawGrid(setX, setY, setW, setH, 4, 1, 'rgba(25, 135, 84, 0.25)', '#198754', 'Set (A-D)');
 
     // 3. Draw Answer Columns (Purple)
-    const cols = [
-        { label: 'Q1-25', x: 'col1_x', y: 'col1_y', w: 'col1_w', h: 'col1_h' },
-        { label: 'Q26-50', x: 'col2_x', y: 'col2_y', w: 'col2_w', h: 'col2_h' },
-        { label: 'Q51-75', x: 'col3_x', y: 'col3_y', w: 'col3_w', h: 'col3_h' },
-        { label: 'Q76-100', x: 'col4_x', y: 'col4_y', w: 'col4_w', h: 'col4_h' },
-    ];
+    const colBlocks = document.querySelectorAll('.answer-col-block');
+    colBlocks.forEach((block, idx) => {
+        const xInput = block.querySelector('.col-input-x');
+        const yInput = block.querySelector('.col-input-y');
+        const wInput = block.querySelector('.col-input-w');
+        const hInput = block.querySelector('.col-input-h');
+        const x = xInput ? (parseInt(xInput.value) || 0) : 0;
+        const y = yInput ? (parseInt(yInput.value) || 0) : 0;
+        const w = wInput ? (parseInt(wInput.value) || 0) : 0;
+        const h = hInput ? (parseInt(hInput.value) || 0) : 0;
 
-    cols.forEach(c => {
-        const x = parseInt(document.getElementById(c.x).value) || 0;
-        const y = parseInt(document.getElementById(c.y).value) || 0;
-        const w = parseInt(document.getElementById(c.w).value) || 0;
-        const h = parseInt(document.getElementById(c.h).value) || 0;
-        drawGrid(x, y, w, h, 25, 4, 'rgba(111, 66, 193, 0.15)', '#6f42c1', c.label);
+        const origCol = (templateData.answer_columns && templateData.answer_columns[idx]);
+        const qCount = origCol ? (origCol.q_end - origCol.q_start + 1) : 25;
+        const label = origCol ? `${origCol.subject ? origCol.subject + ' ' : ''}(Q${origCol.q_start}-${origCol.q_end})` : `Col ${idx+1}`;
+
+        drawGrid(x, y, w, h, qCount, 4, 'rgba(111, 66, 193, 0.15)', '#6f42c1', label);
     });
 }
 
@@ -675,32 +679,23 @@ function collectTemplateJson() {
         columns: (base.set_region && base.set_region.columns) ? base.set_region.columns : 1
     };
 
-    const c1 = (base.answer_columns && base.answer_columns[0]) ? Object.assign({}, base.answer_columns[0]) : { column_index: 1, q_start: 1, q_end: 25 };
-    const c2 = (base.answer_columns && base.answer_columns[1]) ? Object.assign({}, base.answer_columns[1]) : { column_index: 2, q_start: 26, q_end: 50 };
-    const c3 = (base.answer_columns && base.answer_columns[2]) ? Object.assign({}, base.answer_columns[2]) : { column_index: 3, q_start: 51, q_end: 75 };
-    const c4 = (base.answer_columns && base.answer_columns[3]) ? Object.assign({}, base.answer_columns[3]) : { column_index: 4, q_start: 76, q_end: 100 };
-
-    c1.x = parseInt(document.getElementById('col1_x').value) || 0;
-    c1.y = parseInt(document.getElementById('col1_y').value) || 0;
-    c1.w = parseInt(document.getElementById('col1_w').value) || 0;
-    c1.h = parseInt(document.getElementById('col1_h').value) || 0;
-
-    c2.x = parseInt(document.getElementById('col2_x').value) || 0;
-    c2.y = parseInt(document.getElementById('col2_y').value) || 0;
-    c2.w = parseInt(document.getElementById('col2_w').value) || 0;
-    c2.h = parseInt(document.getElementById('col2_h').value) || 0;
-
-    c3.x = parseInt(document.getElementById('col3_x').value) || 0;
-    c3.y = parseInt(document.getElementById('col3_y').value) || 0;
-    c3.w = parseInt(document.getElementById('col3_w').value) || 0;
-    c3.h = parseInt(document.getElementById('col3_h').value) || 0;
-
-    c4.x = parseInt(document.getElementById('col4_x').value) || 0;
-    c4.y = parseInt(document.getElementById('col4_y').value) || 0;
-    c4.w = parseInt(document.getElementById('col4_w').value) || 0;
-    c4.h = parseInt(document.getElementById('col4_h').value) || 0;
-
-    base.answer_columns = [c1, c2, c3, c4];
+    const answerCols = [];
+    const colBlocks = document.querySelectorAll('.answer-col-block');
+    colBlocks.forEach((block, idx) => {
+        const origCol = (templateData.answer_columns && templateData.answer_columns[idx]) 
+            ? Object.assign({}, templateData.answer_columns[idx]) 
+            : { column_index: idx + 1, q_start: (idx * 25) + 1, q_end: (idx + 1) * 25 };
+        const xInput = block.querySelector('.col-input-x');
+        const yInput = block.querySelector('.col-input-y');
+        const wInput = block.querySelector('.col-input-w');
+        const hInput = block.querySelector('.col-input-h');
+        origCol.x = xInput ? (parseInt(xInput.value) || 0) : 0;
+        origCol.y = yInput ? (parseInt(yInput.value) || 0) : 0;
+        origCol.w = wInput ? (parseInt(wInput.value) || 0) : 0;
+        origCol.h = hInput ? (parseInt(hInput.value) || 0) : 0;
+        answerCols.push(origCol);
+    });
+    base.answer_columns = answerCols;
     return base;
 }
 

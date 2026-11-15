@@ -235,8 +235,9 @@ async function detectPorts() {
             data.ports.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.port;
-                opt.text = `${p.port} — ${p.description}`;
-                if (p.port === currentVal) opt.selected = true;
+                opt.text = p.description.startsWith(p.port) ? p.description : `${p.port} — ${p.description}`;
+                if (p.is_recommended) opt.classList.add('fw-bold', 'text-success');
+                if (p.port === currentVal || (!currentVal && p.is_recommended)) opt.selected = true;
                 select.appendChild(opt);
             });
             if (data.ports.length === 0) {
@@ -279,14 +280,15 @@ async function testModemConnection() {
         if (data.success) {
             statusBox.className = 'alert alert-success py-2 small mb-0';
             statusBox.innerHTML = `
-                <div><i class="fa fa-check-circle me-1"></i> <strong>মডেম সংযুক্ত ও সক্রিয়!</strong></div>
-                <div>পোর্ট: <code>${data.port}</code></div>
-                <div>মডেল: <strong>${data.model || 'Generic GSM'}</strong></div>
+                <div><i class="fa fa-check-circle me-1"></i> <strong>মডেম সংযুক্ত ও SMS পাঠানোর জন্য প্রস্তুত!</strong></div>
+                <div>পোর্ট: <code>${data.port}</code> | মডেল: <strong>${data.model || 'Generic GSM'}</strong></div>
+                <div>সিম স্ট্যাটাস: <strong>${data.sim_status || 'সক্রিয়'}</strong> | নেটওয়ার্ক: <strong>${data.network_status || 'সংযুক্ত'}</strong></div>
                 <div>সিগন্যাল: <span class="badge bg-primary">${data.signal_dbm}</span></div>
+                <div class="mt-2 text-success fw-bold"><i class="fa fa-check-double me-1"></i> এই পোর্টটি স্বয়ংক্রিয়ভাবে ডিফল্ট মডেম হিসেবে সংরক্ষিত হয়েছে।</div>
             `;
         } else {
             statusBox.className = 'alert alert-danger py-2 small mb-0';
-            statusBox.innerHTML = `<i class="fa fa-exclamation-triangle me-1"></i> ত্রুটি: ${data.error || 'মডেমের সাথে সংযোগ স্থাপন করা যায়নি।'}`;
+            statusBox.innerHTML = `<i class="fa fa-exclamation-triangle me-1"></i> <strong>ত্রুটি:</strong> ${data.error || 'মডেমের সাথে সংযোগ স্থাপন করা যায়নি।'}`;
         }
     } catch (e) {
         statusBox.className = 'alert alert-danger py-2 small mb-0';
@@ -341,7 +343,17 @@ async function sendTestSms() {
             alertBox.innerHTML = `<i class="fa fa-check-circle me-1"></i> <strong>সফল!</strong> এসএমএস সফলভাবে প্রেরিত হয়েছে। (Message ID: ${data.message_id || 'OK'})`;
         } else {
             alertBox.className = 'alert alert-danger py-2 small mb-3';
-            alertBox.innerHTML = `<i class="fa fa-times-circle me-1"></i> <strong>ব্যর্থ:</strong> ${data.error || 'এসএমএস পাঠানো সম্ভব হয়নি।'}`;
+            alertBox.innerHTML = `
+                <div class="mb-2"><i class="fa fa-times-circle me-1"></i> <strong>ব্যর্থ:</strong> ${data.error || 'এসএমএস পাঠানো সম্ভব হয়নি।'}</div>
+                <div class="mt-2 p-2 bg-light text-dark rounded border small">
+                    <strong>💡 সমাধান নির্দেশিকা:</strong>
+                    <ul class="mb-0 ps-3">
+                        <li>আপনার কম্পিউটারে মডেমের নিজস্ব সফটওয়্যার (GP Internet, Join Air ইত্যাদি) চালু থাকলে তা সম্পূর্ণ বন্ধ (Exit) করুন।</li>
+                        <li>মডেমে একাধিক পোর্ট থাকলে <strong>UI AT Interface</strong> বা <strong>Modem</strong> লেখা পোর্টটি সিলেক্ট করুন (ডায়াগনস্টিক পোর্ট নয়)।</li>
+                        <li>সিমে পর্যাপ্ত মেইন একাউন্ট ব্যালেন্স বা এসএমএস বান্ডেল আছে কিনা নিশ্চিত হন।</li>
+                    </ul>
+                </div>
+            `;
         }
     } catch (e) {
         alertBox.className = 'alert alert-danger py-2 small mb-3';
