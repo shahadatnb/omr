@@ -32,6 +32,9 @@
                 <p class="text-muted mb-0">পরীক্ষা: <strong>{{ exam.title }}</strong> | প্রশ্ন: <strong>{{ exam.total_questions }}টি</strong></p>
             </div>
             <div class="d-flex gap-2">
+                <a href="{% url 'dashboard:standalone_camera' exam.id %}" class="btn btn-primary fw-bold">
+                    <i class="fa fa-camera me-1"></i> লাইভ ক্যামেরা স্ক্যান
+                </a>
                 <a href="{% url 'dashboard:standalone_answer_key' exam.id %}" class="btn btn-outline-secondary">
                     <i class="fa fa-key me-1"></i> Answer Key
                 </a>
@@ -108,19 +111,25 @@
                 </div>
 
                 <div class="row g-2 text-center mb-4">
-                    <div class="col-4">
+                    <div class="col-3">
                         <div class="border rounded p-2 bg-light">
                             <div class="text-muted small">মোট শিট</div>
                             <h4 class="fw-bold mb-0" id="statTotal">0</h4>
                         </div>
                     </div>
-                    <div class="col-4">
+                    <div class="col-3">
                         <div class="border rounded p-2 bg-light">
                             <div class="text-muted small">মূল্যায়ন সম্পন্ন</div>
                             <h4 class="fw-bold text-success mb-0" id="statProcessed">0</h4>
                         </div>
                     </div>
-                    <div class="col-4">
+                    <div class="col-3">
+                        <div class="border rounded p-2 bg-light">
+                            <div class="text-muted small">ডুপ্লিকেট বাতিল</div>
+                            <h4 class="fw-bold text-warning mb-0" id="statDuplicates">0</h4>
+                        </div>
+                    </div>
+                    <div class="col-3">
                         <div class="border rounded p-2 bg-light">
                             <div class="text-muted small">ত্রুটি / অবমূল্যায়িত</div>
                             <h4 class="fw-bold text-danger mb-0" id="statError">0</h4>
@@ -209,7 +218,9 @@ async function startProcessing() {
 
     const total = selectedFilesList.length;
     let processed = 0;
+    let duplicates = 0;
     let errors = 0;
+    let totalDone = 0;
     let nextIndex = 0;
     const CONCURRENCY = 4; // 4 Parallel Workers
 
@@ -231,26 +242,31 @@ async function startProcessing() {
                 });
                 const data = await resp.json();
 
-                processed++;
-                if (data.error_message) errors++;
+                totalDone++;
+                if (data.is_duplicate) {
+                    duplicates++;
+                    document.getElementById('statDuplicates').innerText = duplicates;
+                } else if (data.error_message || !data.success) {
+                    errors++;
+                    document.getElementById('statError').innerText = errors;
+                } else {
+                    processed++;
+                    document.getElementById('statProcessed').innerText = processed;
+                }
 
-                document.getElementById('statProcessed').innerText = processed;
-                document.getElementById('statError').innerText = errors;
-
-                appendLiveRow(processed, data);
+                appendLiveRow(totalDone, data);
 
             } catch (err) {
                 console.error(err);
-                processed++;
+                totalDone++;
                 errors++;
-                document.getElementById('statProcessed').innerText = processed;
                 document.getElementById('statError').innerText = errors;
             }
 
-            const percent = Math.round((processed / total) * 100);
+            const percent = Math.round((totalDone / total) * 100);
             document.getElementById('progressBar').style.width = percent + '%';
-            document.getElementById('progressBar').innerText = `${percent}% (${processed}/${total})`;
-            document.getElementById('currentStatusText').innerHTML = `<strong>সমান্তরাল মূল্যায়ন চলছে (৪টি থ্রেডে):</strong> ${processed}/${total} সম্পন্ন`;
+            document.getElementById('progressBar').innerText = `${percent}% (${totalDone}/${total})`;
+            document.getElementById('currentStatusText').innerHTML = `<strong>সমান্তরাল মূল্যায়ন চলছে (৪টি থ্রেডে):</strong> ${totalDone}/${total} সম্পন্ন`;
         }
     }
 
@@ -289,17 +305,30 @@ async function startProcessing() {
 function appendLiveRow(index, data) {
     const tbody = document.getElementById('liveResultsTbody');
     const tr = document.createElement('tr');
-    tr.className = data.error_message ? 'table-warning' : '';
-
-    tr.innerHTML = `
-        <td class="text-muted small">${index}</td>
-        <td><i class="fa fa-file-image text-primary me-1"></i> <span title="${data.filename}">${data.filename}</span></td>
-        <td><strong class="font-monospace fs-6 text-primary">${data.roll_no || 'N/A'}</strong></td>
-        <td><span class="badge bg-secondary">${data.exam_set || '-'}</span></td>
-        <td><span class="text-success">+${data.correct_count}</span> / <span class="text-danger">-${data.wrong_count}</span></td>
-        <td><strong class="${data.marks > 0 ? 'text-success' : 'text-muted'} fs-6">${data.marks}</strong></td>
-        <td><span class="badge bg-dark">#${data.rank || '-'}</span></td>
-    `;
+    
+    if (data.is_duplicate) {
+        tr.className = 'table-warning bg-opacity-75';
+        tr.innerHTML = `
+            <td class="text-muted small">${index}</td>
+            <td><i class="fa fa-copy text-warning me-1"></i> <span title="${data.filename}">${data.filename}</span></td>
+            <td><strong class="font-monospace fs-6 text-danger">${data.roll_no || 'N/A'}</strong></td>
+            <td><span class="badge bg-secondary">${data.existing_set || '-'}</span></td>
+            <td><span class="text-muted">-</span></td>
+            <td><span class="badge bg-warning text-dark"><i class="fa fa-copy me-1"></i> ডুপ্লিকেট (পূর্বে: ${data.existing_marks})</span></td>
+            <td><span class="badge bg-danger">বাতিল</span></td>
+        `;
+    } else {
+        tr.className = data.error_message ? 'table-warning' : '';
+        tr.innerHTML = `
+            <td class="text-muted small">${index}</td>
+            <td><i class="fa fa-file-image text-primary me-1"></i> <span title="${data.filename}">${data.filename}</span></td>
+            <td><strong class="font-monospace fs-6 text-primary">${data.roll_no || 'N/A'}</strong></td>
+            <td><span class="badge bg-secondary">${data.exam_set || '-'}</span></td>
+            <td><span class="text-success">+${data.correct_count}</span> / <span class="text-danger">-${data.wrong_count}</span></td>
+            <td><strong class="${data.marks > 0 ? 'text-success' : 'text-muted'} fs-6">${data.marks}</strong></td>
+            <td><span class="badge bg-dark">#${data.rank || '-'}</span></td>
+        `;
+    }
     tbody.prepend(tr);
 }
 </script>

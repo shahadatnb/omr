@@ -230,3 +230,49 @@ class ModemSettings(models.Model):
         return f"Modem: {self.com_port or 'Unset'} ({self.baud_rate})"
 
 
+class SmsLog(models.Model):
+    """
+    Audit log of every SMS sent or attempted via USB GSM Modem or API.
+    Provides complete SMS history and supports retrying failed SMS.
+    """
+    STATUS_CHOICES = [
+        ('pending', 'অপেক্ষমান'),
+        ('sending', 'প্রেরণ চলছে'),
+        ('sent', 'সফল (প্রেরিত)'),
+        ('failed', 'ব্যর্থ'),
+    ]
+
+    exam = models.ForeignKey(
+        StandaloneExam,
+        on_delete=models.CASCADE,
+        related_name='sms_logs',
+        null=True,
+        blank=True,
+        help_text="সংশ্লিষ্ট পরীক্ষা"
+    )
+    result = models.ForeignKey(
+        StandaloneResult,
+        on_delete=models.SET_NULL,
+        related_name='sms_logs',
+        null=True,
+        blank=True,
+        help_text="সংশ্লিষ্ট শিক্ষার্থীর ওএমআর রেজাল্ট"
+    )
+    recipient = models.CharField(max_length=30, db_index=True, help_text="প্রাপক মোবাইল নম্বর")
+    roll_no = models.CharField(max_length=50, blank=True, default='', db_index=True, help_text="রোল নম্বর")
+    student_name = models.CharField(max_length=150, blank=True, default='', help_text="শিক্ষার্থীর নাম")
+    message_text = models.TextField(help_text="এসএমএস বার্তা")
+    status = models.CharField(max_length=20, default='pending', choices=STATUS_CHOICES, db_index=True)
+    error_message = models.TextField(blank=True, null=True, help_text="ব্যর্থতার কারণ / ত্রুটি")
+    retry_count = models.IntegerField(default=0, help_text="পুনঃপ্রচেষ্টার সংখ্যা")
+    sent_at = models.DateTimeField(null=True, blank=True, help_text="প্রেরণের সময়")
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.recipient} ({self.roll_no}) — {self.status}"
+
+
+

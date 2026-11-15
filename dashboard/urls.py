@@ -28,8 +28,9 @@ urlpatterns = [
     path('batch/<int:batch_id>/scan-folder-ajax/', views.scan_folder_ajax, name='scan_folder_ajax'),
     path('batch/<int:batch_id>/process-item-ajax/<int:scan_id>/', views.process_item_ajax, name='process_item_ajax'),
 
-    # Global Institution Settings (for print header/footer)
+    # Global Institution Settings (for print header/footer) & Mobile Connect
     path('settings/', views.institute_settings_view, name='institute_settings'),
+    path('api/mobile-qr/', views.mobile_qr_ajax, name='mobile_qr_ajax'),
 
     # USB / GSM Modem Settings & Test Routes
     path('settings/modem/', views.modem_settings_view, name='modem_settings'),
@@ -45,6 +46,8 @@ urlpatterns = [
     path('standalone/<int:exam_id>/scan-key-sheet-ajax/', views.standalone_scan_key_sheet_ajax, name='standalone_scan_key_sheet_ajax'),
     path('standalone/<int:exam_id>/upload/', views.standalone_upload, name='standalone_upload'),
     path('standalone/<int:exam_id>/upload-single-ajax/', views.standalone_upload_single_ajax, name='standalone_upload_single_ajax'),
+    path('standalone/<int:exam_id>/camera/', views.standalone_camera_scan_view, name='standalone_camera'),
+    path('standalone/<int:exam_id>/camera-scan-ajax/', views.standalone_camera_scan_ajax, name='standalone_camera_scan_ajax'),
     path('standalone/<int:exam_id>/finalize-ranks-ajax/', views.standalone_finalize_ranks_ajax, name='standalone_finalize_ranks_ajax'),
     path('standalone/<int:exam_id>/regenerate-results-ajax/', views.standalone_regenerate_results_ajax, name='standalone_regenerate_results_ajax'),
     path('standalone/<int:exam_id>/results/', views.standalone_results, name='standalone_results'),
@@ -62,4 +65,13 @@ urlpatterns = [
     path('standalone/<int:exam_id>/send-single-sms-ajax/<int:result_id>/', views.standalone_send_single_sms_ajax, name='standalone_send_single_sms_ajax'),
     path('standalone/result/<int:result_id>/send-sms-ajax/', views.standalone_send_single_sms_by_result_id_ajax, name='standalone_send_single_sms_by_result_id_ajax'),
     path('standalone/<int:exam_id>/import-contacts-ajax/', views.standalone_import_contacts_ajax, name='standalone_import_contacts_ajax'),
+    path('standalone/<int:exam_id>/start-sms-campaign-ajax/', views.standalone_start_sms_campaign_ajax, name='standalone_start_sms_campaign_ajax'),
+    path('standalone/<int:exam_id>/stop-sms-campaign-ajax/', views.standalone_stop_sms_campaign_ajax, name='standalone_stop_sms_campaign_ajax'),
+    path('standalone/<int:exam_id>/sms-campaign-status-ajax/', views.standalone_sms_campaign_status_ajax, name='standalone_sms_campaign_status_ajax'),
+
+    # SMS History & Retry Routes
+    path('sms/history/', views.sms_history_view, name='sms_history'),
+    path('sms/retry/<int:log_id>/', views.sms_retry_single_ajax, name='sms_retry_single_ajax'),
+    path('sms/retry-failed-ajax/', views.sms_retry_all_failed_ajax, name='sms_retry_all_failed_ajax'),
+    path('sms/clear-history-ajax/', views.sms_clear_history_ajax, name='sms_clear_history_ajax'),
 ]

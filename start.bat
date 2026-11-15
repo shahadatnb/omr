@@ -24,12 +24,13 @@ if exist ".venv\Scripts\python.exe" (
 )
 
 REM 3. Launch default browser
-start http://127.0.0.1:8080/
+start http://127.0.0.1:8000/
 
-echo OMR Server running at: http://127.0.0.1:8080/
+echo OMR Server running at: http://127.0.0.1:8000/
+echo Mobile Access (Same Wi-Fi): http://0.0.0.0:8000/
 echo To stop the server, press Ctrl + C or close this window.
 echo.
 
-"%PY_RUN%" manage.py runserver 8080
+"%PY_RUN%" manage.py runserver 0.0.0.0:8000
 
 pause

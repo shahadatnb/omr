@@ -75,11 +75,16 @@
                         </a>
                         <ul class="dropdown-menu dropdown-menu-dark">
                             <li><a class="dropdown-item" href="{% url 'dashboard:institute_settings' %}"><i class="fa fa-university text-info me-2"></i> প্রতিষ্ঠানের তথ্য ও প্রিন্ট</a></li>
+                            <li><a class="dropdown-item" href="{% url 'dashboard:institute_settings' %}#mobile-connect"><i class="fa fa-mobile-alt text-primary me-2"></i> মোবাইল কানেক্ট ও কিউআর</a></li>
                             <li><a class="dropdown-item" href="{% url 'dashboard:modem_settings' %}"><i class="fa fa-sms text-warning me-2"></i> ইউএসবি মডেম ও এসএমএস</a></li>
+                            <li><a class="dropdown-item" href="{% url 'dashboard:sms_history' %}"><i class="fa fa-history text-success me-2"></i> এসএমএস হিস্ট্রি ও রিপোর্ট</a></li>
                         </ul>
                     </li>
                 </ul>
                 <div class="d-flex text-light align-items-center">
+                    <a href="{% url 'dashboard:institute_settings' %}#mobile-connect" class="btn btn-sm btn-outline-info text-white me-3" title="মোবাইল ফোন দিয়ে ওএমআর সিস্টেম ওপেন করতে কিউআর কোড দেখুন">
+                        <i class="fa fa-qrcode text-warning me-1"></i> মোবাইল কানেক্ট
+                    </a>
                     <small class="text-white-50"><i class="fa fa-link me-1"></i> Laravel API: {{ settings.LARAVEL_API_URL|default:"Connected" }}</small>
                 </div>
             </div>

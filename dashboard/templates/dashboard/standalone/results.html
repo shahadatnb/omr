@@ -25,6 +25,9 @@
         <button type="button" class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#importContactsModal" title="ঐচ্ছিক এক্সেল বা সিএসভি ফাইল থেকে নাম বা মোবাইল নম্বর যোগ করুন">
             <i class="fa fa-file-excel me-1"></i> (ঐচ্ছিক) নাম/ফোন ইমপোর্ট
         </button>
+        <a href="{% url 'dashboard:standalone_camera' exam.id %}" class="btn btn-outline-primary fw-bold">
+            <i class="fa fa-camera me-1"></i> লাইভ ক্যামেরা স্ক্যান
+        </a>
         <a href="{% url 'dashboard:standalone_upload' exam.id %}" class="btn btn-primary">
             <i class="fa fa-cloud-upload-alt me-1"></i> আরও শিট আপলোড
         </a>
@@ -195,11 +198,14 @@
                                 {{ r.marks|floatformat:2 }}
                             </h5>
                         </td>
-                        <td id="standalone-sms-{{ r.id }}">
+                        <td id="standalone-sms-{{ r.id }}" class="text-nowrap">
                             {% if r.sms_status == 'sent' %}
                                 <span class="badge bg-success" title="{{ r.sms_sent_at|date:'d M, h:i A' }}"><i class="fa fa-check me-1"></i>প্রেরিত</span>
                             {% elif r.sms_status == 'failed' %}
-                                <span class="badge bg-danger" title="{{ r.sms_error }}"><i class="fa fa-exclamation-circle me-1"></i>ব্যর্থ</span>
+                                <span class="badge bg-danger" title="{{ r.sms_error }}"><i class="fa fa-times me-1"></i>ব্যর্থ</span>
+                                <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1 ms-1" onclick="retryStudentSms({{ r.id }})" title="রি-ট্রাই করুন">
+                                    <i class="fa fa-redo"></i>
+                                </button>
                             {% else %}
                                 <span class="badge bg-light text-dark border">পেন্ডিং</span>
                             {% endif %}
@@ -446,6 +452,14 @@
                         </div>
                     </div>
 
+                    <!-- Helpful Background Info Alert -->
+                    <div class="alert alert-info py-2 px-3 small mb-3 d-flex align-items-center">
+                        <i class="fa fa-info-circle fa-lg text-primary me-2"></i>
+                        <div>
+                            <strong>ব্যাকগ্রাউন্ড ডেলিভারি সার্ভিস:</strong> এসএমএস পাঠানো শুরু হলে আপনি নিশ্চিন্তে <strong>অন্য পেজে যেতে পারবেন</strong> বা ব্রাউজার বন্ধ করলেও সার্ভার ব্যাকগ্রাউন্ডে ধারাবাহিকভাবে এসএমএস পাঠাতে থাকবে।
+                        </div>
+                    </div>
+
                     <!-- Sample SMS Preview -->
                     <div class="card border mb-3">
                         <div class="card-header bg-light py-2 small fw-bold d-flex justify-content-between align-items-center">
@@ -481,10 +495,15 @@
                     </div>
                 </div>
             </div>
-            <div class="modal-footer d-flex justify-content-between">
-                <a href="{% url 'dashboard:modem_settings' %}" target="_blank" class="btn btn-outline-secondary">
-                    <i class="fa fa-cog me-1"></i> মডেম সেটিংস ও টেমপ্লেট
-                </a>
+            <div class="modal-footer d-flex justify-content-between flex-wrap gap-2">
+                <div class="d-flex gap-2">
+                    <a href="{% url 'dashboard:modem_settings' %}" target="_blank" class="btn btn-outline-secondary">
+                        <i class="fa fa-cog me-1"></i> মডেম সেটিংস
+                    </a>
+                    <a href="{% url 'dashboard:sms_history' %}?exam_id={{ exam.id }}" target="_blank" class="btn btn-outline-success">
+                        <i class="fa fa-history me-1"></i> এসএমএস হিস্ট্রি
+                    </a>
+                </div>
                 <div class="d-flex gap-2">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="btnSmsClose">বন্ধ করুন</button>
                     <button type="button" class="btn btn-danger d-none" id="btnStopSms" onclick="stopBatchSms()">
@@ -1018,117 +1037,151 @@ function updateMainTableRowSmsStatus(resultId, status, tooltip) {
     }
 }
 
+let smsPollInterval = null;
+
 async function startBatchSms() {
     const filterOption = document.querySelector('input[name="smsFilterOption"]:checked').value;
 
-    let targetStudents = [];
-    if (filterOption === 'pending') {
-        targetStudents = smsStudentsQueue.filter(s => s.phone && s.status !== 'sent');
-    } else {
-        targetStudents = smsStudentsQueue.filter(s => s.phone);
-    }
-
-    if (targetStudents.length === 0) {
-        alert('প্রেরণ করার মতো কোনো উপযুক্ত মোবাইল নম্বর পাওয়া যায়নি। ওএমআর শিটের রোলের ঘরে মোবাইল নম্বর বাবল করা আছে কিনা নিশ্চিত করুন।');
+    if (!confirm('আপনি কি এই পরীক্ষার জন্য ব্যাকগ্রাউন্ডে এসএমএস প্রেরণ শুরু করতে চান?\n\nসার্ভার ব্যাকগ্রাউন্ডে এসএমএস পাঠাবে, তাই আপনি নিশ্চিন্তে অন্য পেজে যেতে পারবেন বা ব্রাউজার বন্ধ করলেও চলবে।')) {
         return;
     }
 
-    if (!confirm(`মোট ${targetStudents.length} জন শিক্ষার্থীর মোবাইলে সরাসরি মডেম দিয়ে অফলাইন এসএমএস পাঠানো শুরু করতে চান?`)) {
-        return;
-    }
-
-    isSmsSending = true;
+    const formData = new FormData();
+    formData.append('filter_option', filterOption);
 
     // UI state
     document.getElementById('btnStartSms').classList.add('d-none');
     document.getElementById('btnStopSms').classList.remove('d-none');
-    document.getElementById('btnSmsClose').disabled = true;
-    document.getElementById('smsModalCloseBtn').disabled = true;
     document.getElementById('smsProgressSection').classList.remove('d-none');
-
-    // Filter radios disable
     document.getElementById('smsFilterPending').disabled = true;
     document.getElementById('smsFilterAll').disabled = true;
 
-    // Reset log and counters
-    const logBox = document.getElementById('smsLiveLog');
-    logBox.innerHTML = '';
-    appendSmsLog(`<span class="text-info">[${new Date().toLocaleTimeString()}] ব্যাচ এসএমএস প্রেরণ শুরু... মোট লক্ষ্য: ${targetStudents.length}</span>`);
+    try {
+        const resp = await fetch(`/dashboard/standalone/${currentExamId}/start-sms-campaign-ajax/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: formData
+        });
+        const data = await resp.json();
 
-    let sentCount = 0;
-    let failedCount = 0;
-    const totalToProcess = targetStudents.length;
-
-    document.getElementById('liveSentCount').innerText = '0';
-    document.getElementById('liveFailedCount').innerText = '0';
-    document.getElementById('liveRemainingCount').innerText = totalToProcess;
-    document.getElementById('smsProgressBar').style.width = '0%';
-    document.getElementById('smsProgressBar').innerText = '0%';
-
-    for (let i = 0; i < targetStudents.length; i++) {
-        if (!isSmsSending) {
-            appendSmsLog(`<span class="text-warning">[${new Date().toLocaleTimeString()}] প্রেরণ স্থগিত করা হয়েছে।</span>`);
-            break;
+        if (data.success) {
+            isSmsSending = true;
+            pollSmsCampaign();
+            if (smsPollInterval) clearInterval(smsPollInterval);
+            smsPollInterval = setInterval(pollSmsCampaign, 1500);
+        } else {
+            alert('শুরু করতে ব্যর্থ: ' + (data.error || 'অজানা ত্রুটি'));
+            document.getElementById('btnStartSms').classList.remove('d-none');
+            document.getElementById('btnStopSms').classList.add('d-none');
+            document.getElementById('smsFilterPending').disabled = false;
+            document.getElementById('smsFilterAll').disabled = false;
         }
+    } catch (err) {
+        alert('সার্ভার যোগাযোগ ত্রুটি: ' + err.message);
+        document.getElementById('btnStartSms').classList.remove('d-none');
+        document.getElementById('btnStopSms').classList.add('d-none');
+        document.getElementById('smsFilterPending').disabled = false;
+        document.getElementById('smsFilterAll').disabled = false;
+    }
+}
 
-        const student = targetStudents[i];
-        const currentIdx = i + 1;
-        document.getElementById('smsProgressStatus').innerText = `প্রেরণ করা হচ্ছে (${currentIdx}/${totalToProcess}): ${student.phone} (রোল ${student.roll})...`;
-
-        try {
-            const resp = await fetch(`/dashboard/standalone/result/${student.id}/send-sms-ajax/`, {
-                method: 'POST',
-                headers: { 'X-CSRFToken': getCookie('csrftoken') }
-            });
-            const data = await resp.json();
-
-            const timeStr = new Date().toLocaleTimeString();
-            if (data.success && data.status === 'sent') {
-                sentCount++;
-                student.status = 'sent';
-                appendSmsLog(`<span class="text-success">[${timeStr}] <i class="fa fa-check"></i> রোল ${student.roll} (${student.phone}): সফল</span>`);
-                updateMainTableRowSmsStatus(student.id, 'sent', data.sent_at);
-            } else {
-                failedCount++;
-                student.status = 'failed';
-                appendSmsLog(`<span class="text-danger">[${timeStr}] <i class="fa fa-times"></i> রোল ${student.roll} (${student.phone}): ব্যর্থ (${data.error || 'Unknown'})</span>`);
-                updateMainTableRowSmsStatus(student.id, 'failed', data.error);
-            }
-        } catch (err) {
-            failedCount++;
-            student.status = 'failed';
-            appendSmsLog(`<span class="text-danger">[${new Date().toLocaleTimeString()}] <i class="fa fa-times"></i> রোল ${student.roll}: নেটওয়ার্ক/সার্ভার ত্রুটি</span>`);
-            updateMainTableRowSmsStatus(student.id, 'failed', 'সার্ভার যোগাযোগ ত্রুটি');
+async function stopBatchSms() {
+    if (!confirm('আপনি কি চলমান এসএমএস প্রেরণ স্থগিত করতে চান?')) return;
+    try {
+        const resp = await fetch(`/dashboard/standalone/${currentExamId}/stop-sms-campaign-ajax/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        });
+        const data = await resp.json();
+        if (data.success) {
+            document.getElementById('smsProgressStatus').innerText = 'স্থগিত করা হচ্ছে...';
         }
+    } catch (e) {
+        console.error(e);
+    }
+}
 
-        const remaining = totalToProcess - (sentCount + failedCount);
-        const percent = Math.round(((sentCount + failedCount) / totalToProcess) * 100);
+async function pollSmsCampaign() {
+    try {
+        const resp = await fetch(`/dashboard/standalone/${currentExamId}/sms-campaign-status-ajax/`);
+        const data = await resp.json();
+        if (!data) return;
 
-        document.getElementById('liveSentCount').innerText = sentCount;
-        document.getElementById('liveFailedCount').innerText = failedCount;
-        document.getElementById('liveRemainingCount').innerText = remaining;
+        const total = data.total || 0;
+        const sent = data.sent_count || 0;
+        const failed = data.failed_count || 0;
+        const currentIdx = data.current_index || (sent + failed);
+        const percent = data.percent || (total > 0 ? Math.round((currentIdx / total) * 100) : 0);
+
+        document.getElementById('liveSentCount').innerText = sent;
+        document.getElementById('liveFailedCount').innerText = failed;
+        document.getElementById('liveRemainingCount').innerText = Math.max(0, total - currentIdx);
+
         document.getElementById('smsProgressBar').style.width = percent + '%';
         document.getElementById('smsProgressBar').innerText = percent + '%';
         document.getElementById('smsProgressPercent').innerText = percent + '%';
+
+        if (data.is_running) {
+            document.getElementById('smsProgressStatus').innerText = `প্রেরণ চলছে (${currentIdx}/${total}): ${data.current_phone || ''} (রোল ${data.current_roll || ''})...`;
+            document.getElementById('btnStartSms').classList.add('d-none');
+            document.getElementById('btnStopSms').classList.remove('d-none');
+        } else {
+            if (smsPollInterval) {
+                clearInterval(smsPollInterval);
+                smsPollInterval = null;
+            }
+            document.getElementById('btnStartSms').classList.remove('d-none');
+            document.getElementById('btnStopSms').classList.add('d-none');
+            document.getElementById('btnSmsClose').disabled = false;
+            document.getElementById('smsModalCloseBtn').disabled = false;
+            document.getElementById('smsFilterPending').disabled = false;
+            document.getElementById('smsFilterAll').disabled = false;
+            document.getElementById('smsProgressStatus').innerText = (percent >= 100 || currentIdx >= total) ? `প্রেরণ সম্পন্ন হয়েছে! (সফল: ${sent}, ব্যর্থ: ${failed})` : 'প্রেরণ সমাপ্ত বা স্থগিত।';
+        }
+
+        // Render logs
+        if (data.logs && data.logs.length > 0) {
+            const logBox = document.getElementById('smsLiveLog');
+            logBox.innerHTML = '';
+            data.logs.forEach(l => {
+                const div = document.createElement('div');
+                div.className = `mb-1 text-${l.type || 'light'}`;
+                div.innerHTML = `[${l.time}] ${l.msg}`;
+                logBox.appendChild(div);
+            });
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+    } catch (err) {
+        console.error('Error polling SMS campaign:', err);
     }
-
-    // Done
-    isSmsSending = false;
-    document.getElementById('btnStartSms').classList.remove('d-none');
-    document.getElementById('btnStopSms').classList.add('d-none');
-    document.getElementById('btnSmsClose').disabled = false;
-    document.getElementById('smsModalCloseBtn').disabled = false;
-    document.getElementById('smsFilterPending').disabled = false;
-    document.getElementById('smsFilterAll').disabled = false;
-
-    document.getElementById('smsProgressStatus').innerText = `প্রেরণ সম্পন্ন হয়েছে! (সফল: ${sentCount}, ব্যর্থ: ${failedCount})`;
-    appendSmsLog(`<span class="text-info fw-bold">[${new Date().toLocaleTimeString()}] সমাপ্ত: ${sentCount}টি সফল, ${failedCount}টি ব্যর্থ।</span>`);
 }
 
-function stopBatchSms() {
-    if (confirm('আপনি কি এসএমএস প্রেরণ প্রক্রিয়া বন্ধ করতে চান?')) {
-        isSmsSending = false;
-        document.getElementById('smsProgressStatus').innerText = 'স্থগিত করা হচ্ছে...';
+async function retryStudentSms(resultId) {
+    const td = document.getElementById(`standalone-sms-${resultId}`);
+    if (!td) return;
+    const oldHtml = td.innerHTML;
+    td.innerHTML = `<span class="text-primary small"><i class="fa fa-spinner fa-spin me-1"></i>পাঠানো হচ্ছে...</span>`;
+
+    try {
+        const resp = await fetch(`/dashboard/standalone/result/${resultId}/send-sms-ajax/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        });
+        const data = await resp.json();
+        if (data.success) {
+            td.innerHTML = `<span class="badge bg-success" title="${data.sent_at || 'প্রেরিত'}"><i class="fa fa-check me-1"></i>প্রেরিত</span>`;
+        } else {
+            td.innerHTML = `
+                <span class="badge bg-danger" title="${data.error || 'ব্যর্থ'}"><i class="fa fa-times me-1"></i>ব্যর্থ</span>
+                <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1 ms-1" onclick="retryStudentSms(${resultId})" title="রি-ট্রাই করুন">
+                    <i class="fa fa-redo"></i>
+                </button>
+            `;
+            alert('এসএমএস পাঠানো ব্যর্থ: ' + (data.error || 'অজানা ত্রুটি'));
+        }
+    } catch (e) {
+        td.innerHTML = oldHtml;
+        alert('সার্ভার যোগাযোগ ত্রুটি: ' + e.message);
     }
 }
 

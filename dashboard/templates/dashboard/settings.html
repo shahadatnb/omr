@@ -17,6 +17,67 @@
             </a>
         </div>
 
+        <!-- MOBILE CONNECT & QR CODE CARD -->
+        <div class="card shadow-sm border-0 mb-4" id="mobile-connect">
+            <div class="card-header bg-gradient text-white py-3 d-flex justify-content-between align-items-center" style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);">
+                <div>
+                    <h5 class="fw-bold mb-0"><i class="fa fa-mobile-alt me-2"></i>স্মার্টফোন / মোবাইল সংযোগ ও কিউআর কোড</h5>
+                    <small class="opacity-75">একই ওয়াই-ফাই নেটওয়ার্কের যেকোনো মোবাইল দিয়ে সরাসরি ওএমআর চালাতে এই কিউআর স্ক্যান করুন</small>
+                </div>
+                <span class="badge bg-light text-dark font-monospace fs-6">IP: {{ local_ip }}</span>
+            </div>
+            <div class="card-body p-4">
+                <div class="row align-items-center g-4">
+                    <div class="col-md-5 text-center border-end">
+                        <div class="p-2 border rounded shadow-sm d-inline-block bg-white">
+                            <img id="mobileQrImg" src="{{ qr_data_uri }}" alt="Mobile Connect QR Code" class="img-fluid" style="width: 220px; height: 220px;">
+                        </div>
+                        <div class="mt-2 text-muted small">
+                            <i class="fa fa-camera text-primary me-1"></i>মোবাইলের ক্যামেরা দিয়ে স্ক্যান করুন
+                        </div>
+                    </div>
+                    <div class="col-md-7">
+                        <ul class="nav nav-pills mb-3" id="qrProtocolTabs">
+                            <li class="nav-item">
+                                <button class="nav-link active btn-sm" id="tabHttps" onclick="switchQrMode('https')">
+                                    <i class="fa fa-shield-alt text-success me-1"></i> HTTPS মোড (ক্যামেরার জন্য প্রস্তাবিত)
+                                </button>
+                            </li>
+                            <li class="nav-item">
+                                <button class="nav-link btn-sm" id="tabHttp" onclick="switchQrMode('http')">
+                                    <i class="fa fa-globe text-primary me-1"></i> সাধারণ HTTP মোড
+                                </button>
+                            </li>
+                        </ul>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-muted">সরাসরি লিঙ্ক (Direct URL):</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control font-monospace" id="mobileUrlInput" value="{{ current_url }}" readonly>
+                                <button class="btn btn-outline-secondary" type="button" onclick="copyMobileUrl()" title="কপি করুন">
+                                    <i class="fa fa-copy"></i> কপি
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- HTTPS Instructions -->
+                        <div id="httpsHelpText" class="alert alert-success border-success py-2 small mb-0">
+                            <strong><i class="fa fa-check-circle me-1"></i>শর্টকাট নিয়ম (কোনো chrome://flags সেটিংস লাগবে না):</strong><br>
+                            ১. <code>start_ssl.bat</code> ডাবল ক্লিক করে সার্ভার চালু করুন।<br>
+                            ২. উপরের কিউআর কোড স্ক্যান করুন।<br>
+                            ৩. মোবাইলের ব্রাউজারে ওয়ার্নিং এলে শুধু <strong>Advanced</strong> $\rightarrow$ <strong>Proceed to {{ local_ip }} (unsafe)</strong> বাটনে চাপ দিন। ব্যস, মোবাইলের ব্যাক ক্যামেরা সাথে সাথে চালু হয়ে যাবে!
+                        </div>
+
+                        <!-- HTTP Instructions (Hidden by default) -->
+                        <div id="httpHelpText" class="alert alert-warning border-warning py-2 small mb-0 d-none">
+                            <strong><i class="fa fa-info-circle me-1"></i>সাধারণ HTTP মোডে ক্যামেরা চালাতে:</strong><br>
+                            অ্যান্ড্রয়েড ফোনের Chrome-এ <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code> গিয়ে <code>{{ http_url }}</code> যুক্ত করে Relaunch করুন।
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="card shadow-sm mb-4">
             <div class="card-body p-4">
                 <form method="post" enctype="multipart/form-data">
@@ -81,4 +142,45 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const httpQr = "{{ http_qr|escapejs }}";
+const httpsQr = "{{ https_qr|escapejs }}";
+const httpUrl = "{{ http_url|escapejs }}";
+const httpsUrl = "{{ https_url|escapejs }}";
+
+function switchQrMode(mode) {
+    const img = document.getElementById('mobileQrImg');
+    const input = document.getElementById('mobileUrlInput');
+    const tabHttps = document.getElementById('tabHttps');
+    const tabHttp = document.getElementById('tabHttp');
+    const httpsHelp = document.getElementById('httpsHelpText');
+    const httpHelp = document.getElementById('httpHelpText');
+
+    if (mode === 'https') {
+        img.src = httpsQr;
+        input.value = httpsUrl;
+        tabHttps.classList.add('active');
+        tabHttp.classList.remove('active');
+        httpsHelp.classList.remove('d-none');
+        httpHelp.classList.add('d-none');
+    } else {
+        img.src = httpQr;
+        input.value = httpUrl;
+        tabHttp.classList.add('active');
+        tabHttps.classList.remove('active');
+        httpHelp.classList.remove('d-none');
+        httpsHelp.classList.add('d-none');
+    }
+}
+
+function copyMobileUrl() {
+    const input = document.getElementById('mobileUrlInput');
+    navigator.clipboard.writeText(input.value).then(() => {
+        alert('মোবাইল লিঙ্ক কপি করা হয়েছে: ' + input.value);
+    });
+}
+</script>
 {% endblock %}

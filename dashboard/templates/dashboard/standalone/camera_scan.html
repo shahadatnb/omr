@@ -1,0 +1,737 @@
+{% extends 'dashboard/base.html' %}
+
+{% block title %}লাইভ ক্যামেরা ওএমআর স্ক্যানার | {{ exam.title }}{% endblock %}
+
+{% block extra_head %}
+<style>
+    .camera-container {
+        position: relative;
+        background-color: #000;
+        border-radius: 10px;
+        overflow: hidden;
+        min-height: 480px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+    #cameraVideo {
+        width: 100%;
+        height: auto;
+        max-height: 70vh;
+        object-fit: contain;
+    }
+    /* Translucent A4 Target Alignment Overlay */
+    .viewfinder-overlay {
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        pointer-events: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .sheet-guide-box {
+        width: 65%;
+        height: 90%;
+        border: 2px dashed rgba(255, 255, 255, 0.6);
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4);
+        position: relative;
+        border-radius: 6px;
+        transition: border-color 0.2s ease;
+    }
+    .sheet-guide-box.scanning {
+        border-color: #00e676;
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6), 0 0 25px rgba(0, 230, 118, 0.6);
+    }
+    .corner-bracket {
+        position: absolute;
+        width: 24px;
+        height: 24px;
+        border-color: #00e676;
+        border-style: solid;
+    }
+    .corner-bracket.tl { top: -2px; left: -2px; border-width: 4px 0 0 4px; }
+    .corner-bracket.tr { top: -2px; right: -2px; border-width: 4px 4px 0 0; }
+    .corner-bracket.bl { bottom: -2px; left: -2px; border-width: 0 0 4px 4px; }
+    .corner-bracket.br { bottom: -2px; right: -2px; border-width: 0 4px 4px 0; }
+    
+    .status-overlay-badge {
+        position: absolute;
+        top: 15px;
+        left: 15px;
+        background: rgba(0,0,0,0.7);
+        backdrop-filter: blur(4px);
+        color: #fff;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 13px;
+        font-weight: bold;
+    }
+    .capture-flash {
+        animation: flashAnim 0.3s ease-out;
+    }
+    @keyframes flashAnim {
+        0% { opacity: 0.8; background: #fff; }
+        100% { opacity: 0; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- TOP HEADER -->
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <div class="d-flex align-items-center gap-2">
+            <h4 class="fw-bold mb-0">
+                <i class="fa fa-camera text-primary me-2"></i>লাইভ ক্যামেরা ওএমআর স্ক্যানার
+            </h4>
+            <span class="badge bg-primary fs-6">{{ exam.title }}</span>
+        </div>
+        <p class="text-muted small mb-0">ল্যাপটপের ওয়েবক্যাম বা মোবাইলের ক্যামেরা দিয়ে সরাসরি ওএমআর শিট ধরে ১ সেকেন্ডে ইনস্ট্যান্ট রেজাল্ট বের করুন</p>
+    </div>
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+        <span class="badge bg-dark py-2 px-3 fs-6">
+            <i class="fa fa-check-circle text-success me-1"></i>সেশন স্ক্যান: <strong id="sessionScanCount">0</strong> টি
+        </span>
+        <button type="button" class="btn btn-outline-info btn-sm fw-bold" onclick="openMobileQrModal()">
+            <i class="fa fa-qrcode me-1"></i> 📱 মোবাইলে চালান
+        </button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="soundToggleBtn" onclick="toggleSound()">
+            <i class="fa fa-volume-up text-success me-1" id="soundIcon"></i> <span id="soundText">সাউন্ড অন</span>
+        </button>
+        <a href="{% url 'dashboard:standalone_results' exam.id %}" class="btn btn-outline-primary btn-sm fw-bold">
+            <i class="fa fa-list me-1"></i> ফলাফল তালিকায় ফিরুন
+        </a>
+    </div>
+</div>
+
+<!-- WARNING IF ANSWER KEYS NOT SET -->
+{% if not sets_configured.A and not sets_configured.B and not sets_configured.C and not sets_configured.D %}
+<div class="alert alert-warning py-2 small d-flex align-items-center mb-3">
+    <i class="fa fa-exclamation-triangle fa-lg me-2"></i>
+    <div>
+        <strong>সতর্কতা:</strong> এই পরীক্ষার কোনো Answer Key এখনও সেট করা হয়নি! 
+        <a href="{% url 'dashboard:standalone_answer_key' exam.id %}" target="_blank" class="fw-bold text-dark text-decoration-underline ms-1">এখানে ক্লিক করে Answer Key সেট করুন</a>, অন্যথায় শুধু রোল ও অপশন শনাক্ত হবে কিন্তু নম্বর হিসাব হবে না।
+    </div>
+</div>
+{% endif %}
+
+<div class="row g-3">
+    <!-- LEFT: LIVE CAMERA FEED & CONTROLS -->
+    <div class="col-lg-7">
+        <div class="card shadow-sm border-0 mb-3">
+            <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <!-- Camera Select Dropdown -->
+                <div class="d-flex align-items-center gap-1">
+                    <span class="small fw-bold text-muted"><i class="fa fa-video text-primary me-1"></i>ক্যামেরা:</span>
+                    <select class="form-select form-select-sm" id="cameraSelect" style="min-width: 180px;" onchange="switchCamera(this.value)">
+                        <option value="">ক্যামেরা লোড হচ্ছে...</option>
+                    </select>
+                </div>
+
+                <!-- Auto-Scan Toggle -->
+                <div class="form-check form-switch m-0" title="অটো স্ক্যান সক্রিয় থাকলে প্রতি ৩ সেকেন্ড পর পর ক্যামেরা ফ্রেম স্বয়ংক্রিয়ভাবে স্ক্যান করবে">
+                    <input class="form-check-input" type="checkbox" id="autoScanSwitch" onchange="toggleAutoScan(this.checked)">
+                    <label class="form-check-label small fw-bold" for="autoScanSwitch">
+                        <i class="fa fa-bolt text-warning me-1"></i>অটো-ক্যাপচার মোড
+                    </label>
+                </div>
+            </div>
+
+            <!-- CAMERA VIEWFINDER -->
+            <div class="card-body p-0 camera-container">
+                <video id="cameraVideo" autoplay playsinline muted></video>
+                <div id="flashEffect" class="position-absolute w-100 h-100 pointer-events-none" style="z-index: 5;"></div>
+
+                <!-- Viewfinder Guide Box -->
+                <div class="viewfinder-overlay">
+                    <div class="sheet-guide-box" id="guideBox">
+                        <div class="corner-bracket tl"></div>
+                        <div class="corner-bracket tr"></div>
+                        <div class="corner-bracket bl"></div>
+                        <div class="corner-bracket br"></div>
+                        <div class="text-center text-white small opacity-75 mt-2" style="text-shadow: 0 1px 3px rgba(0,0,0,0.8);">
+                            শিটটি এই ফ্রেমের মাঝে রাখুন
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Badge -->
+                <div class="status-overlay-badge" id="cameraStatusBadge">
+                    <i class="fa fa-circle text-success me-1"></i> লাইভ ফিড প্রস্তুত
+                </div>
+            </div>
+
+            <!-- CAPTURE ACTION BUTTONS -->
+            <div class="card-footer bg-white p-3 text-center">
+                <button type="button" class="btn btn-success btn-lg px-5 py-3 fw-bold shadow-sm" id="btnCapture" onclick="captureAndScan()">
+                    <i class="fa fa-camera-retro fa-lg me-2"></i> স্ক্যান ও মূল্যায়ন করুন <span class="small opacity-75 ms-1">(Spacebar)</span>
+                </button>
+                <div class="text-muted small mt-2">
+                    <i class="fa fa-info-circle me-1"></i> ক্যামেরা দিয়ে শিটের ৪টি কোণার কালো মার্কার স্পষ্ট দেখা গেলে স্পেসবার বা বাটনে চাপুন। উল্টো শিট হলেও স্বয়ংক্রিয়ভাবে সোজা হবে।
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- RIGHT: INSTANT EVALUATION RESULTS SIDEBAR -->
+    <div class="col-lg-5">
+        <!-- LATEST SCANNED RESULT CARD -->
+        <div class="card shadow-sm border-0 mb-3">
+            <div class="card-header bg-primary text-white py-2 d-flex justify-content-between align-items-center">
+                <h6 class="fw-bold mb-0"><i class="fa fa-award me-1"></i> সর্বশেষ স্ক্যান ফলাফল</h6>
+                <span class="badge bg-white text-primary fw-bold" id="resultStatusPill">অপেক্ষমান</span>
+            </div>
+            <div class="card-body p-3 text-center" id="resultCardBody">
+                <div class="py-4 text-muted" id="placeholderView">
+                    <i class="fa fa-id-card fa-3x mb-2 text-secondary opacity-50"></i>
+                    <p class="mb-0">ক্যামেরার সামনে ওএমআর শিট রেখে <strong>"স্ক্যান করুন"</strong> চাপুন। তাৎক্ষণিক রোল ও নম্বর এখানে ভেসে উঠবে।</p>
+                </div>
+
+                <!-- EVALUATED RESULT DISPLAY (HIDDEN INITIALLY) -->
+                <div id="evaluatedView" class="d-none">
+                    <div class="row g-2 align-items-center mb-3">
+                        <div class="col-7 text-start">
+                            <div class="text-muted small">শনাক্তকৃত রোল নম্বর:</div>
+                            <h2 class="fw-bold font-monospace text-primary mb-0" id="resRoll">-</h2>
+                        </div>
+                        <div class="col-5 text-end">
+                            <span class="badge bg-success fs-5 px-3 py-2" id="resSet">Set A</span>
+                        </div>
+                    </div>
+
+                    <!-- MARKS & RANK ROW -->
+                    <div class="p-3 bg-light rounded border mb-3">
+                        <div class="row align-items-center">
+                            <div class="col-6 border-end">
+                                <div class="text-muted small fw-bold">প্রাপ্ত মোট নম্বর</div>
+                                <h1 class="fw-bold text-success mb-0" id="resMarks">0.00</h1>
+                                <div class="small text-muted">মোট প্রশ্ন: {{ exam.total_questions }}</div>
+                            </div>
+                            <div class="col-6">
+                                <div class="text-muted small fw-bold">মেধা স্থান (Rank)</div>
+                                <h2 class="fw-bold text-primary mb-0" id="resRank">#-</h2>
+                                <div class="small text-muted">মোট শিট: <span id="resTotalSheets">{{ exam.total_sheets }}</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CORRECT / WRONG / BLANK PILLS -->
+                    <div class="d-flex justify-content-around mb-3">
+                        <span class="badge bg-success fs-6 py-2 px-3" id="resCorrect"><i class="fa fa-check me-1"></i>সঠিক: 0</span>
+                        <span class="badge bg-danger fs-6 py-2 px-3" id="resWrong"><i class="fa fa-times me-1"></i>ভুল: 0</span>
+                        <span class="badge bg-secondary fs-6 py-2 px-3" id="resBlank"><i class="fa fa-minus me-1"></i>ছেড়েছে: 0</span>
+                    </div>
+
+                    <!-- AUTO FLIPPED BADGE -->
+                    <div id="resAutoFlippedAlert" class="alert alert-warning py-1 px-2 small mb-3 d-none">
+                        <i class="fa fa-sync-alt fa-spin me-1"></i> <strong>উল্টো শিট সোজা করা হয়েছে:</strong> শিটটি উল্টো ধরা হয়েছিল, ইঞ্জিন স্বয়ংক্রিয়ভাবে ১৮০° ঘুরিয়ে মূল্যায়ন করেছে!
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center">
+                        <a href="javascript:void(0)" id="resViewSheetBtn" target="_blank" class="btn btn-sm btn-outline-secondary">
+                            <i class="fa fa-image me-1"></i> স্ক্যান কপি দেখুন
+                        </a>
+                        <span class="badge bg-success-subtle text-success border border-success small" id="resTimeText">এইমাত্র</span>
+                    </div>
+                </div>
+
+                <!-- DUPLICATE ALERT DISPLAY (HIDDEN INITIALLY) -->
+                <div id="duplicateAlertView" class="d-none">
+                    <div class="alert alert-warning border border-warning shadow-sm text-start p-3 mb-2">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="fa fa-copy fa-2x text-warning me-2"></i>
+                            <div>
+                                <h6 class="fw-bold text-dark mb-0">⚠️ ডুপ্লিকেট শিট শনাক্ত! (বাতিল করা হলো)</h6>
+                                <small class="text-muted">এই ওএমআর শিটটি ইতিপূর্বেই মূল্যায়িত হয়েছে।</small>
+                            </div>
+                        </div>
+                        <div class="p-2 bg-white rounded border my-2">
+                            <div class="row g-2 text-center">
+                                <div class="col-6 border-end">
+                                    <div class="small text-muted">শনাক্ত রোল:</div>
+                                    <div class="fw-bold font-monospace fs-5 text-danger" id="dupRoll">-</div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="small text-muted">পূর্বের প্রাপ্ত নম্বর:</div>
+                                    <div class="fw-bold fs-5 text-success" id="dupMarks">-</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="alert alert-danger py-1 px-2 small mb-0 text-center">
+                            <i class="fa fa-times-circle me-1"></i> ডুপ্লিকেট এন্ট্রি প্রতিরোধে এই স্ক্যানটি সংরক্ষণ করা হয়নি।
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SESSION SCAN HISTORY TABLE -->
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-light py-2 d-flex justify-content-between align-items-center">
+                <span class="small fw-bold text-dark"><i class="fa fa-history me-1"></i> এই সেশনের স্ক্যান তালিকা</span>
+                <span class="badge bg-secondary" id="historyCountBadge">0</span>
+            </div>
+            <div class="card-body p-0" style="max-height: 280px; overflow-y: auto;">
+                <table class="table table-sm table-hover align-middle mb-0 font-monospace" style="font-size: 13px;">
+                    <thead class="table-light sticky-top">
+                        <tr>
+                            <th class="ps-2">সময়</th>
+                            <th>রোল</th>
+                            <th>সেট</th>
+                            <th>নম্বর</th>
+                            <th class="text-end pe-2">অবস্থা</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sessionHistoryBody">
+                        <tr id="emptyHistoryRow">
+                            <td colspan="5" class="text-center py-4 text-muted font-sans-serif">এখনও কোনো শিট স্ক্যান করা হয়নি।</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden Canvas for frame snapshot -->
+<canvas id="snapshotCanvas" class="d-none"></canvas>
+
+<!-- MOBILE QR MODAL -->
+<div class="modal fade" id="mobileQrModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content text-center p-3">
+            <div class="modal-header border-0 pb-0 justify-content-between">
+                <h5 class="modal-title fw-bold"><i class="fa fa-mobile-alt text-primary me-2"></i>মোবাইলে ক্যামেরা ওএমআর স্ক্যানার</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">একই ওয়াই-ফাই বা লোকাল নেটওয়ার্কে থাকা মোবাইল দিয়ে সরাসরি এই পরীক্ষার ক্যামেরা স্ক্যানার পেজ খুলতে নিচের কিউআর কোডটি স্ক্যান করুন:</p>
+                <div class="p-2 border rounded bg-white shadow-sm d-inline-block my-2">
+                    <img id="camModalQrImg" src="" alt="Scan to open on phone" style="width: 210px; height: 210px;">
+                </div>
+                <div class="mt-2">
+                    <div class="input-group input-group-sm mb-2">
+                        <input type="text" class="form-control font-monospace text-center" id="camModalUrlInput" readonly>
+                    </div>
+                </div>
+                <div class="alert alert-success border-success py-2 small mb-0 text-start">
+                    <i class="fa fa-shield-alt text-success me-1"></i> <strong>শর্টকাট নিয়ম (কোনো chrome://flags ছাড়াই):</strong><br>
+                    সার্ভার <code>start_ssl.bat</code> দিয়ে চালালে কিউআর স্ক্যান করে শুধু একবার <strong>Advanced &rarr; Proceed</strong> চাপলেই ক্যামেরা সচল হয়ে যাবে।
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ==============================================================================
+// 1. STATE & AUDIO SYNTHESIZER
+// ==============================================================================
+let currentStream = null;
+let isScanning = false;
+let autoScanEnabled = false;
+let autoScanTimer = null;
+let soundEnabled = true;
+let sessionCounter = 0;
+let duplicateCooldownUntil = 0;
+const examId = {{ exam.id }};
+
+const video = document.getElementById('cameraVideo');
+const canvas = document.getElementById('snapshotCanvas');
+const guideBox = document.getElementById('guideBox');
+const statusBadge = document.getElementById('cameraStatusBadge');
+const btnCapture = document.getElementById('btnCapture');
+
+// Web Audio API Synthesizer for instant scanner beep (no external file required)
+const AudioContext = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+
+function initAudio() {
+    if (!audioCtx) {
+        audioCtx = new AudioContext();
+    }
+}
+
+function playSuccessBeep() {
+    if (!soundEnabled) return;
+    try {
+        initAudio();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime); // 880 Hz (A5)
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.12);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.12);
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+function playErrorBeep() {
+    if (!soundEnabled) return;
+    try {
+        initAudio();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(220, audioCtx.currentTime); // Low buzz
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.25);
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+function playDuplicateBeep() {
+    if (!soundEnabled) return;
+    try {
+        initAudio();
+        const now = audioCtx.currentTime;
+        // Two-tone warning beep (580Hz -> 420Hz)
+        const osc1 = audioCtx.createOscillator();
+        const gain1 = audioCtx.createGain();
+        osc1.type = 'triangle';
+        osc1.frequency.setValueAtTime(580, now);
+        gain1.gain.setValueAtTime(0.22, now);
+        gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+        osc1.connect(gain1);
+        gain1.connect(audioCtx.destination);
+        osc1.start(now);
+        osc1.stop(now + 0.15);
+
+        const osc2 = audioCtx.createOscillator();
+        const gain2 = audioCtx.createGain();
+        osc2.type = 'triangle';
+        osc2.frequency.setValueAtTime(420, now + 0.18);
+        gain2.gain.setValueAtTime(0.22, now + 0.18);
+        gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+        osc2.connect(gain2);
+        gain2.connect(audioCtx.destination);
+        osc2.start(now + 0.18);
+        osc2.stop(now + 0.35);
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+function toggleSound() {
+    soundEnabled = !soundEnabled;
+    document.getElementById('soundIcon').className = soundEnabled ? 'fa fa-volume-up text-success me-1' : 'fa fa-volume-mute text-secondary me-1';
+    document.getElementById('soundText').innerText = soundEnabled ? 'সাউন্ড অন' : 'মিউট';
+}
+
+// ==============================================================================
+// 2. CAMERA INITIALIZATION & ENUMERATION
+// ==============================================================================
+async function initCamera(preferredDeviceId = null) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('আপনার ব্রাউজার ক্যামেরা সাপোর্ট করে না বা সিকিউরড HTTPS কানেকশন প্রয়োজন।');
+        return;
+    }
+
+    if (currentStream) {
+        currentStream.getTracks().forEach(t => t.stop());
+    }
+
+    const constraints = {
+        video: {
+            width: { ideal: 1920, min: 1280 },
+            height: { ideal: 1080, min: 720 },
+            facingMode: preferredDeviceId ? undefined : { ideal: 'environment' },
+            deviceId: preferredDeviceId ? { exact: preferredDeviceId } : undefined
+        }
+    };
+
+    try {
+        currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = currentStream;
+        await video.play();
+
+        statusBadge.innerHTML = '<i class="fa fa-circle text-success me-1"></i> ক্যামেরা সক্রিয়';
+        enumerateCameras();
+    } catch (err) {
+        console.error('Camera access error:', err);
+        statusBadge.innerHTML = '<i class="fa fa-exclamation-triangle text-danger me-1"></i> ক্যামেরা সংযোগ ব্যর্থ';
+        alert('ক্যামেরা চালু করা সম্ভব হয়নি: ' + err.message);
+    }
+}
+
+async function enumerateCameras() {
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(d => d.kind === 'videoinput');
+        const select = document.getElementById('cameraSelect');
+        select.innerHTML = '';
+
+        videoDevices.forEach((dev, idx) => {
+            const opt = document.createElement('option');
+            opt.value = dev.deviceId;
+            opt.innerText = dev.label || `ক্যামেরা ${idx + 1}`;
+            select.appendChild(opt);
+        });
+
+        // Select current track deviceId if matched
+        if (currentStream) {
+            const currentTrack = currentStream.getVideoTracks()[0];
+            const currentSettings = currentTrack ? currentTrack.getSettings() : null;
+            if (currentSettings && currentSettings.deviceId) {
+                select.value = currentSettings.deviceId;
+            }
+        }
+    } catch (e) {
+        console.error('Enumerate error:', e);
+    }
+}
+
+function switchCamera(deviceId) {
+    if (deviceId) {
+        initCamera(deviceId);
+    }
+}
+
+// ==============================================================================
+// 3. CAPTURE & OMR EVALUATION
+// ==============================================================================
+async function captureAndScan() {
+    if (isScanning || !currentStream) return;
+
+    isScanning = true;
+    guideBox.classList.add('scanning');
+    statusBadge.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> শিট স্ক্যান ও মূল্যায়ন হচ্ছে...';
+    btnCapture.disabled = true;
+
+    // Visual camera shutter flash
+    const flash = document.getElementById('flashEffect');
+    flash.className = 'position-absolute w-100 h-100 capture-flash';
+    setTimeout(() => { flash.className = 'position-absolute w-100 h-100 pointer-events-none'; }, 300);
+
+    // Draw video frame to hidden canvas
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // Convert to Base64 JPEG
+    const base64Data = canvas.toDataURL('image/jpeg', 0.92);
+
+    const formData = new FormData();
+    formData.append('image_data', base64Data);
+
+    try {
+        const resp = await fetch(`/dashboard/standalone/${examId}/camera-scan-ajax/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: formData
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+            playSuccessBeep();
+            sessionCounter++;
+            document.getElementById('sessionScanCount').innerText = sessionCounter;
+
+            displayEvaluationResult(data);
+            appendSessionHistoryRow(data, 'success');
+
+            statusBadge.innerHTML = `<i class="fa fa-check-circle text-success me-1"></i> রোল ${data.roll_no} (${data.marks} নম্বর) সফল!`;
+        } else if (data.is_duplicate) {
+            playDuplicateBeep();
+            duplicateCooldownUntil = Date.now() + 4500;
+            displayDuplicateResult(data);
+            appendSessionHistoryRow(data, 'duplicate');
+            statusBadge.innerHTML = `<i class="fa fa-copy text-warning me-1"></i> ডুপ্লিকেট: রোল ${data.roll_no} (বাতিল করা হয়েছে)`;
+        } else {
+            playErrorBeep();
+            statusBadge.innerHTML = `<i class="fa fa-times-circle text-danger me-1"></i> ${data.error || 'ওএমআর পড়তে ব্যর্থ'}`;
+            appendSessionHistoryRow({
+                roll_no: 'ব্যর্থ',
+                exam_set: '-',
+                marks: 0,
+                error: data.error || 'চিহ্নিত করা যায়নি'
+            }, 'error');
+        }
+    } catch (err) {
+        playErrorBeep();
+        statusBadge.innerHTML = `<i class="fa fa-times-circle text-danger me-1"></i> নেটওয়ার্ক/সার্ভার ত্রুটি`;
+        console.error(err);
+    } finally {
+        setTimeout(() => {
+            isScanning = false;
+            guideBox.classList.remove('scanning');
+            btnCapture.disabled = false;
+            if (!autoScanEnabled) {
+                statusBadge.innerHTML = '<i class="fa fa-circle text-success me-1"></i> পরবর্তী শিট ধরুন';
+            }
+        }, 800);
+    }
+}
+
+function displayEvaluationResult(data) {
+    document.getElementById('placeholderView').classList.add('d-none');
+    document.getElementById('duplicateAlertView').classList.add('d-none');
+    document.getElementById('evaluatedView').classList.remove('d-none');
+
+    document.getElementById('resultStatusPill').className = 'badge bg-success text-white fw-bold';
+    document.getElementById('resultStatusPill').innerText = 'সফল মূল্যায়ন';
+
+    document.getElementById('resRoll').innerText = data.roll_no;
+    document.getElementById('resSet').innerText = `Set ${data.exam_set}`;
+    document.getElementById('resMarks').innerText = Number(data.marks).toFixed(2);
+    document.getElementById('resRank').innerText = `#${data.rank || 1}`;
+    document.getElementById('resTotalSheets').innerText = data.total_evaluated;
+
+    document.getElementById('resCorrect').innerHTML = `<i class="fa fa-check me-1"></i>সঠিক: ${data.correct_count}`;
+    document.getElementById('resWrong').innerHTML = `<i class="fa fa-times me-1"></i>ভুল: ${data.wrong_count}`;
+    document.getElementById('resBlank').innerHTML = `<i class="fa fa-minus me-1"></i>ছেড়েছে: ${data.unattempted_count}`;
+
+    // Auto-flipped alert
+    const flipAlert = document.getElementById('resAutoFlippedAlert');
+    if (data.auto_flipped) {
+        flipAlert.classList.remove('d-none');
+    } else {
+        flipAlert.classList.add('d-none');
+    }
+
+    if (data.image_url) {
+        document.getElementById('resViewSheetBtn').href = data.image_url;
+    }
+    document.getElementById('resTimeText').innerText = new Date().toLocaleTimeString();
+}
+
+function displayDuplicateResult(data) {
+    document.getElementById('placeholderView').classList.add('d-none');
+    document.getElementById('evaluatedView').classList.add('d-none');
+    document.getElementById('duplicateAlertView').classList.remove('d-none');
+
+    document.getElementById('resultStatusPill').className = 'badge bg-warning text-dark fw-bold';
+    document.getElementById('resultStatusPill').innerText = 'ডুপ্লিকেট (বাতিল)';
+
+    document.getElementById('dupRoll').innerText = data.roll_no;
+    document.getElementById('dupMarks').innerText = Number(data.existing_marks).toFixed(2);
+}
+
+function appendSessionHistoryRow(data, statusType) {
+    const emptyRow = document.getElementById('emptyHistoryRow');
+    if (emptyRow) emptyRow.remove();
+
+    const tbody = document.getElementById('sessionHistoryBody');
+    const tr = document.createElement('tr');
+    
+    if (statusType === 'success') {
+        tr.className = 'table-success bg-opacity-25';
+    } else if (statusType === 'duplicate') {
+        tr.className = 'table-warning bg-opacity-50';
+    } else {
+        tr.className = 'table-danger bg-opacity-25';
+    }
+
+    const timeStr = new Date().toLocaleTimeString();
+    
+    let statusBadgeHtml = '';
+    if (statusType === 'success') {
+        statusBadgeHtml = `<span class="badge bg-success"><i class="fa fa-check me-1"></i>সফল</span>`;
+    } else if (statusType === 'duplicate') {
+        statusBadgeHtml = `<span class="badge bg-warning text-dark" title="${data.error}"><i class="fa fa-copy me-1"></i>ডুপ্লিকেট বাতিল</span>`;
+    } else {
+        statusBadgeHtml = `<span class="badge bg-danger" title="${data.error}"><i class="fa fa-times me-1"></i>ত্রুটি</span>`;
+    }
+
+    let marksDisplay = '-';
+    if (statusType === 'success') {
+        marksDisplay = Number(data.marks).toFixed(2);
+    } else if (statusType === 'duplicate') {
+        marksDisplay = `<span class="text-muted text-decoration-line-through">${Number(data.existing_marks).toFixed(2)}</span>`;
+    }
+
+    tr.innerHTML = `
+        <td class="ps-2 small text-muted">${timeStr}</td>
+        <td><strong class="${statusType === 'duplicate' ? 'text-warning text-dark' : ''}">${data.roll_no}</strong></td>
+        <td><span class="badge ${statusType === 'success' ? 'bg-primary' : 'bg-secondary'}">${data.exam_set || data.existing_set || '-'}</span></td>
+        <td><span class="fw-bold ${statusType === 'success' ? 'text-success' : 'text-danger'}">${marksDisplay}</span></td>
+        <td class="text-end pe-2">
+            ${statusBadgeHtml}
+        </td>
+    `;
+    tbody.insertBefore(tr, tbody.firstChild);
+    document.getElementById('historyCountBadge').innerText = tbody.children.length;
+}
+
+// ==============================================================================
+// 4. AUTO-CAPTURE MODE
+// ==============================================================================
+function toggleAutoScan(enabled) {
+    autoScanEnabled = enabled;
+    if (autoScanTimer) clearInterval(autoScanTimer);
+
+    if (enabled) {
+        statusBadge.innerHTML = '<i class="fa fa-bolt text-warning me-1"></i> অটো-ক্যাপচার চালু (প্রতি ২.৫ সেকেন্ডে)';
+        autoScanTimer = setInterval(() => {
+            if (!isScanning) {
+                if (Date.now() < duplicateCooldownUntil) {
+                    statusBadge.innerHTML = '<i class="fa fa-hand-paper text-warning me-1"></i> পরবর্তী শিট ধরুন (কুলডাউন সক্রিয়)...';
+                    return;
+                }
+                captureAndScan();
+            }
+        }, 2500);
+    } else {
+        statusBadge.innerHTML = '<i class="fa fa-circle text-success me-1"></i> ক্যামেরা সক্রিয়';
+    }
+}
+
+// ==============================================================================
+// 5. KEYBOARD SHORTCUTS & UTILS
+// ==============================================================================
+window.addEventListener('keydown', function(e) {
+    if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        captureAndScan();
+    }
+});
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+async function openMobileQrModal() {
+    try {
+        const resp = await fetch(`/dashboard/api/mobile-qr/?path=${encodeURIComponent(window.location.pathname)}`);
+        const data = await resp.json();
+        if (data.success) {
+            document.getElementById('camModalQrImg').src = data.active_qr;
+            document.getElementById('camModalUrlInput').value = data.active_url;
+            new bootstrap.Modal(document.getElementById('mobileQrModal')).show();
+        }
+    } catch (e) {
+        alert('QR কোড লোড করতে ব্যর্থ: ' + e.message);
+    }
+}
+
+// Start camera on page load
+document.addEventListener('DOMContentLoaded', () => {
+    initCamera();
+});
+</script>
+{% endblock %}

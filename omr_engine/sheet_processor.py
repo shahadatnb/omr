@@ -126,7 +126,7 @@ def process_sheet(image_path, template_path, answer_key=None, debug=False):
         # warped = preprocess_image(warped)  # uncomment if needed
 
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # Step 4: Data Extraction
+        # Step 4: Data Extraction & Auto 180° Flip
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         debug_info = {}
 
@@ -151,7 +151,44 @@ def process_sheet(image_path, template_path, answer_key=None, debug=False):
             result['exam_set'] = read_set(warped, template)
             result['answers'] = read_answers(warped, template)
 
-        logger.info(f"Student ID: {result['student_numeric_id']}, Set: {result['exam_set']}")
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # Auto 180° Flip & Deskew Check
+        # যদি শিটটি স্ক্যানারে উল্টো (Upside Down ১৮০°) ঢুকে থাকে,
+        # তবে স্বয়ংক্রিয়ভাবে ১৮০° ঘুরিয়ে নির্ভুলভাবে ডেটা বের করো
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        result['auto_flipped'] = False
+        if result['student_numeric_id'] is None or result['exam_set'] is None:
+            rot180 = cv2.rotate(warped, cv2.ROTATE_180)
+            id_180 = read_id_number(rot180, template)
+            set_180 = read_set(rot180, template)
+
+            should_flip = False
+            if (id_180 is not None and result['student_numeric_id'] is None) or \
+               (set_180 is not None and result['exam_set'] is None):
+                should_flip = True
+            elif id_180 is not None and set_180 is not None:
+                should_flip = True
+
+            if should_flip:
+                logger.info("Auto 180° Flip: Sheet was scanned upside down. Correcting orientation...")
+                warped = rot180
+                result['auto_flipped'] = True
+                result['student_numeric_id'] = id_180
+                result['exam_set'] = set_180
+                result['answers'] = read_answers(warped, template)
+
+                if debug:
+                    id_result = read_id_with_debug(warped, template)
+                    set_result = read_set_with_debug(warped, template)
+                    ans_result = read_answers_with_debug(warped, template)
+                    debug_info = {
+                        'id_debug': id_result,
+                        'set_debug': set_result,
+                        'answer_debug': ans_result['debug'],
+                        'auto_flipped': True,
+                    }
+
+        logger.info(f"Student ID: {result['student_numeric_id']}, Set: {result['exam_set']}, AutoFlipped: {result['auto_flipped']}")
         logger.info(f"Answers extracted: {len(result['answers'])} questions")
 
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -8,8 +8,10 @@ from django.http import JsonResponse, HttpResponse
 from django.conf import settings
 from django.utils import timezone
 from django.views.decorators.http import require_POST
+from django.db.models import Q
 
-from .models import BatchJob, ScanResult, StandaloneExam, StandaloneResult, InstituteSettings, ModemSettings
+from .models import BatchJob, ScanResult, StandaloneExam, StandaloneResult, InstituteSettings, ModemSettings, SmsLog
+from .sms_worker import start_exam_sms_campaign, stop_exam_sms_campaign, get_campaign_status
 from omr_engine.sheet_processor import process_sheet
 from omr_engine.scorer import calculate_score
 from omr_engine.modem_sms import (
@@ -162,6 +164,20 @@ def process_single_scan_helper(scan, fpath, batch, client=None, template_path=No
                     scan.correct_count = score_res['correct']
                     scan.wrong_count = score_res['wrong']
                     scan.unattempted_count = score_res['unattempted']
+
+            # Duplicate Roll Protection (Option A: Reject & Alert)
+            if scan.student_numeric_id and any(c.isdigit() for c in str(scan.student_numeric_id)):
+                existing_scan = ScanResult.objects.filter(
+                    batch=batch,
+                    student_numeric_id=scan.student_numeric_id
+                ).exclude(id=scan.id).first()
+                if existing_scan:
+                    scan.is_matched = False
+                    scan.status = 'error'
+                    scan.error_message = f"ডুপ্লিকেট ওএমআর শিট! রোল {scan.student_numeric_id} ইতিমধ্যে স্ক্যান করা হয়েছে ({existing_scan.original_filename})। ডুপ্লিকেট হিসেবে বাতিল করা হলো।"
+                    scan.save()
+                    batch.update_stats()
+                    return scan
 
             # Match student with Laravel (in-memory fast lookup first, fallback to API)
             if scan.student_numeric_id:
@@ -1564,7 +1580,31 @@ def standalone_upload_single_ajax(request, exam_id):
     try:
         omr_res = process_sheet(res_obj.image_file.path, template_path, debug=False)
         if omr_res.get('success'):
-            res_obj.roll_no = omr_res.get('student_numeric_id') or 'অজ্ঞাত'
+            detected_roll = (omr_res.get('student_numeric_id') or '').strip()
+
+            # Duplicate Roll Protection (Option A: Reject & Alert)
+            if detected_roll and detected_roll not in ['অজ্ঞাত', 'শনাক্ত হয়নি', 'Processing...'] and any(c.isdigit() for c in detected_roll):
+                existing = StandaloneResult.objects.filter(exam=exam, roll_no=detected_roll).exclude(id=res_obj.id).first()
+                if existing:
+                    if res_obj.image_file:
+                        try:
+                            res_obj.image_file.delete(save=False)
+                        except Exception:
+                            pass
+                    res_obj.delete()
+                    return JsonResponse({
+                        'success': False,
+                        'is_duplicate': True,
+                        'filename': f.name,
+                        'roll_no': detected_roll,
+                        'existing_id': existing.id,
+                        'existing_marks': round(existing.marks, 2),
+                        'existing_set': existing.exam_set,
+                        'error': f"রোল {detected_roll} ইতিপূর্বেই স্ক্যান করা হয়েছে (নম্বর: {existing.marks:.2f}, সেট: {existing.exam_set})! ডুপ্লিকেট হিসেবে বাতিল করা হলো।",
+                        'error_message': f"রোল {detected_roll} ইতিমধ্যে স্ক্যান করা হয়েছে (নম্বর: {existing.marks:.2f})! ডুপ্লিকেট হিসেবে বাতিল করা হলো।"
+                    })
+
+            res_obj.roll_no = detected_roll or 'অজ্ঞাত'
             res_obj.exam_set = (omr_res.get('exam_set') or 'A').upper()
             res_obj.answers_json = omr_res.get('answers', {})
 
@@ -1617,6 +1657,175 @@ def standalone_upload_single_ajax(request, exam_id):
         'error_message': res_obj.error_message,
         'total_evaluated': exam.total_sheets,
     })
+
+
+def standalone_camera_scan_view(request, exam_id):
+    """
+    Live Webcam / Mobile Camera Scanning Interface.
+    Allows real-time instant scanning and evaluation of OMR sheets.
+    """
+    exam = get_object_or_404(StandaloneExam, id=exam_id)
+    template_path = get_template_path(exam.template_name, default='offline_exam_100q.json')
+    tpl_data = _get_template_data(template_path)
+
+    # Check which sets have answer keys configured
+    sets_configured = {
+        'A': bool(exam.answers_set_a),
+        'B': bool(exam.answers_set_b),
+        'C': bool(exam.answers_set_c),
+        'D': bool(exam.answers_set_d),
+    }
+
+    recent_results = exam.results.order_by('-created_at')[:10]
+
+    return render(request, 'dashboard/standalone/camera_scan.html', {
+        'exam': exam,
+        'template_name': exam.template_name,
+        'template_data': tpl_data,
+        'sets_configured': sets_configured,
+        'recent_results': recent_results,
+    })
+
+
+@require_POST
+def standalone_camera_scan_ajax(request, exam_id):
+    """
+    AJAX endpoint to receive an instant camera snapshot (Base64 or file),
+    process the OMR sheet, score it, recalculate rank, and save the result.
+    """
+    import base64
+    import uuid
+    import time
+    from django.core.files.base import ContentFile
+
+    exam = get_object_or_404(StandaloneExam, id=exam_id)
+    image_data = request.POST.get('image_data')
+
+    if not image_data and 'file' in request.FILES:
+        image_file = request.FILES['file']
+        orig_name = image_file.name
+    elif image_data:
+        try:
+            if ';base64,' in image_data:
+                format_part, imgstr = image_data.split(';base64,')
+                ext = format_part.split('/')[-1]
+                if ext == 'jpeg':
+                    ext = 'jpg'
+            else:
+                imgstr = image_data
+                ext = 'jpg'
+
+            image_bytes = base64.b64decode(imgstr)
+            orig_name = f"cam_{exam.id}_{int(time.time())}_{uuid.uuid4().hex[:6]}.{ext}"
+            image_file = ContentFile(image_bytes, name=orig_name)
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': f'ইমেজ ডিকোড ব্যর্থ: {str(e)}'}, status=400)
+    else:
+        return JsonResponse({'success': False, 'error': 'কোনো ক্যামেরা ইমেজ ফ্রেম পাওয়া যায়নি।'}, status=400)
+
+    template_path = get_template_path(exam.template_name, default='offline_exam_100q.json')
+
+    # Create result record
+    res_obj = StandaloneResult.objects.create(
+        exam=exam,
+        image_file=image_file,
+        original_filename=orig_name,
+        roll_no='Processing...'
+    )
+
+    try:
+        omr_res = process_sheet(res_obj.image_file.path, template_path, debug=False)
+        if omr_res.get('success'):
+            detected_roll = (omr_res.get('student_numeric_id') or '').strip()
+
+            # Duplicate Roll Protection (Option A: Reject & Alert)
+            if detected_roll and detected_roll not in ['অজ্ঞাত', 'শনাক্ত হয়নি', 'Processing...'] and any(c.isdigit() for c in detected_roll):
+                existing = StandaloneResult.objects.filter(exam=exam, roll_no=detected_roll).exclude(id=res_obj.id).first()
+                if existing:
+                    if res_obj.image_file:
+                        try:
+                            res_obj.image_file.delete(save=False)
+                        except Exception:
+                            pass
+                    res_obj.delete()
+                    return JsonResponse({
+                        'success': False,
+                        'is_duplicate': True,
+                        'filename': orig_name,
+                        'roll_no': detected_roll,
+                        'existing_id': existing.id,
+                        'existing_marks': round(existing.marks, 2),
+                        'existing_set': existing.exam_set,
+                        'error': f"রোল {detected_roll} ইতিপূর্বেই স্ক্যান করা হয়েছে (নম্বর: {existing.marks:.2f}, সেট: {existing.exam_set})! ডুপ্লিকেট হিসেবে বাতিল করা হলো।",
+                        'error_message': f"রোল {detected_roll} ইতিমধ্যে স্ক্যান করা হয়েছে! ডুপ্লিকেট হিসেবে বাতিল করা হলো।"
+                    })
+
+            res_obj.roll_no = detected_roll or 'অজ্ঞাত'
+            res_obj.exam_set = (omr_res.get('exam_set') or 'A').upper()
+            res_obj.answers_json = omr_res.get('answers', {})
+
+            # Auto-detect if roll_no is a valid Bangladeshi mobile number
+            norm_phone = normalize_bd_phone(res_obj.roll_no)
+            if norm_phone['is_valid']:
+                res_obj.phone_number = norm_phone['local']
+
+            ak = exam.get_answer_key(res_obj.exam_set)
+            if ak:
+                tpl_data = _get_template_data(template_path)
+                score_res = calculate_score(
+                    res_obj.answers_json,
+                    ak,
+                    correct_mark=exam.correct_mark,
+                    wrong_mark=exam.wrong_mark,
+                    subjects=tpl_data.get('subjects')
+                )
+                res_obj.marks = score_res['marks']
+                res_obj.subject_marks = score_res.get('subject_marks')
+                res_obj.correct_count = score_res['correct']
+                res_obj.wrong_count = score_res['wrong']
+                res_obj.unattempted_count = score_res['unattempted']
+            else:
+                res_obj.error_message = f"Set {res_obj.exam_set}-এর কোনো Answer Key দেওয়া হয়নি!"
+
+            res_obj.save()
+            exam.total_sheets = exam.results.count()
+            exam.save(update_fields=['total_sheets'])
+            exam.recalculate_ranks()
+            res_obj.refresh_from_db()
+
+            return JsonResponse({
+                'success': True,
+                'result_id': res_obj.id,
+                'filename': res_obj.original_filename,
+                'roll_no': res_obj.roll_no,
+                'exam_set': res_obj.exam_set,
+                'marks': round(res_obj.marks, 2),
+                'rank': res_obj.rank,
+                'correct_count': res_obj.correct_count,
+                'wrong_count': res_obj.wrong_count,
+                'unattempted_count': res_obj.unattempted_count,
+                'auto_flipped': omr_res.get('auto_flipped', False),
+                'image_url': res_obj.image_file.url,
+                'total_evaluated': exam.total_sheets,
+                'message': 'ওএমআর শিট সফলভাবে স্ক্যান ও মূল্যায়ন করা হয়েছে!'
+            })
+        else:
+            res_obj.roll_no = 'শনাক্ত হয়নি'
+            res_obj.error_message = omr_res.get('error', 'ওএমআর শিটের বাবল বা মার্কার পড়তে ব্যর্থ')
+            res_obj.save()
+            return JsonResponse({
+                'success': False,
+                'result_id': res_obj.id,
+                'error': res_obj.error_message,
+                'auto_flipped': omr_res.get('auto_flipped', False)
+            }, status=400)
+
+    except Exception as e:
+        logger.exception("Camera scan processing error")
+        res_obj.roll_no = 'শনাক্ত হয়নি'
+        res_obj.error_message = f"প্রসেসিং ত্রুটি: {str(e)}"
+        res_obj.save()
+        return JsonResponse({'success': False, 'error': f"প্রসেসিং ত্রুটি: {str(e)}"}, status=500)
 
 
 @require_POST
@@ -2048,10 +2257,72 @@ def standalone_reprocess_result_ajax(request, result_id):
         return JsonResponse({'success': False, 'error': f"পুনঃমূল্যায়নে ত্রুটি: {str(e)}"}, status=500)
 
 
+def get_local_lan_ip():
+    """Detect the active local network IPv4 address (e.g. 192.168.1.153)."""
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(('8.8.8.8', 1))
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = '127.0.0.1'
+    finally:
+        s.close()
+    return ip
+
+
+def generate_qr_data_uri(text):
+    """Generate base64 encoded PNG data URI for a QR code."""
+    import qrcode, io, base64
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=6,
+        border=2,
+    )
+    qr.add_data(text)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+def mobile_qr_ajax(request):
+    """Return JSON with local LAN IP and QR code for scanning from mobile."""
+    target_path = request.GET.get('path', '/')
+    if not target_path.startswith('/'):
+        target_path = '/' + target_path
+
+    local_ip = get_local_lan_ip()
+    port = request.get_port() or '8000'
+    is_ssl = request.is_secure()
+
+    http_url = f"http://{local_ip}:{port}{target_path}"
+    https_url = f"https://{local_ip}:{port}{target_path}"
+
+    active_url = https_url if is_ssl else http_url
+    active_qr = generate_qr_data_uri(active_url)
+
+    return JsonResponse({
+        'success': True,
+        'local_ip': local_ip,
+        'port': port,
+        'is_ssl': is_ssl,
+        'active_url': active_url,
+        'active_qr': active_qr,
+        'http_url': http_url,
+        'http_qr': generate_qr_data_uri(http_url),
+        'https_url': https_url,
+        'https_qr': generate_qr_data_uri(https_url),
+    })
+
+
 def institute_settings_view(request):
     """
     Settings page for institution branding on OMR report prints.
     Name, Address, Helpline, Logo, and Footer Note.
+    Also displays dynamic Mobile Connection QR code and LAN IPs.
     """
     settings_obj = InstituteSettings.get_settings()
 
@@ -2071,7 +2342,31 @@ def institute_settings_view(request):
         messages.success(request, 'প্রতিষ্ঠানের তথ্য ও প্রিন্ট সেটিংস সফলভাবে সংরক্ষিত হয়েছে!')
         return redirect('dashboard:institute_settings')
 
-    return render(request, 'dashboard/settings.html', {'settings': settings_obj})
+    local_ip = get_local_lan_ip()
+    port = request.get_port() or '8000'
+    is_ssl = request.is_secure()
+
+    http_url = f"http://{local_ip}:{port}/"
+    https_url = f"https://{local_ip}:{port}/"
+
+    current_url = https_url if is_ssl else http_url
+    qr_data_uri = generate_qr_data_uri(current_url)
+    http_qr = generate_qr_data_uri(http_url)
+    https_qr = generate_qr_data_uri(https_url)
+
+    context = {
+        'settings': settings_obj,
+        'local_ip': local_ip,
+        'port': port,
+        'is_ssl': is_ssl,
+        'current_url': current_url,
+        'http_url': http_url,
+        'https_url': https_url,
+        'qr_data_uri': qr_data_uri,
+        'http_qr': http_qr,
+        'https_qr': https_qr,
+    }
+    return render(request, 'dashboard/settings.html', context)
 
 
 def standalone_export_csv(request, exam_id):
@@ -2334,11 +2629,25 @@ def standalone_send_single_sms_ajax(request, exam_id, result_id):
         result.sms_sent_at = timezone.now()
         result.sms_error = None
         result.save(update_fields=['phone_number', 'sms_status', 'sms_sent_at', 'sms_error'])
+
+        # Save to SmsLog audit history
+        SmsLog.objects.create(
+            exam=exam,
+            result=result,
+            recipient=norm['local'],
+            roll_no=result.roll_no,
+            student_name=result.student_name,
+            message_text=rendered_text,
+            status='sent',
+            sent_at=result.sms_sent_at
+        )
+
         return JsonResponse({
             'success': True,
             'result_id': result.id,
             'roll_no': result.roll_no,
             'phone': norm['local'],
+            'sent_at': result.sms_sent_at.strftime('%d %b, %I:%M %p'),
             'message_id': res.get('message_id')
         })
     else:
@@ -2346,6 +2655,19 @@ def standalone_send_single_sms_ajax(request, exam_id, result_id):
         result.sms_status = 'failed'
         result.sms_error = res.get('error')
         result.save(update_fields=['phone_number', 'sms_status', 'sms_error'])
+
+        # Save to SmsLog audit history
+        SmsLog.objects.create(
+            exam=exam,
+            result=result,
+            recipient=norm['local'],
+            roll_no=result.roll_no,
+            student_name=result.student_name,
+            message_text=rendered_text,
+            status='failed',
+            error_message=res.get('error')
+        )
+
         return JsonResponse({
             'success': False,
             'result_id': result.id,
@@ -2450,6 +2772,270 @@ def standalone_import_contacts_ajax(request, exam_id):
     except Exception as e:
         logger.exception("Contact import error")
         return JsonResponse({'success': False, 'error': f"ফাইল প্রসেসিং ব্যর্থ: {e}"}, status=500)
+
+
+# ==============================================================================
+# BACKGROUND SMS CAMPAIGN & SMS HISTORY CONTROLLERS
+# ==============================================================================
+
+@require_POST
+def standalone_start_sms_campaign_ajax(request, exam_id):
+    """
+    Initiates a server-side background SMS campaign for an exam.
+    The worker runs in an independent background thread, so the user can freely
+    leave the page or close the tab without terminating ongoing SMS sends.
+    """
+    filter_option = request.POST.get('filter_option', 'pending')
+    ok, err = start_exam_sms_campaign(exam_id, filter_option=filter_option)
+    if ok:
+        return JsonResponse({
+            'success': True,
+            'message': 'ব্যাকগ্রাউন্ডে এসএমএস প্রেরণ শুরু হয়েছে। আপনি চাইলে অন্য পেজে যেতে পারবেন, প্রেরণ অব্যাহত থাকবে।'
+        })
+    return JsonResponse({'success': False, 'error': err}, status=400)
+
+
+@require_POST
+def standalone_stop_sms_campaign_ajax(request, exam_id):
+    """
+    Requests an active background SMS campaign to stop.
+    """
+    stopped = stop_exam_sms_campaign(exam_id)
+    return JsonResponse({
+        'success': True,
+        'message': 'এসএমএস প্রেরণ স্থগিত করা হয়েছে।' if stopped else 'কোনো সক্রিয় ক্যাম্পেইন চালু নেই।'
+    })
+
+
+def standalone_sms_campaign_status_ajax(request, exam_id):
+    """
+    Polls the real-time server-side status of an exam's SMS campaign.
+    """
+    status_data = get_campaign_status(exam_id)
+    if not status_data:
+        exam = get_object_or_404(StandaloneExam, id=exam_id)
+        results = exam.results.all()
+        sent = results.filter(sms_status='sent').count()
+        failed = results.filter(sms_status='failed').count()
+        total = results.count()
+        return JsonResponse({
+            'is_running': False,
+            'total': total,
+            'sent_count': sent,
+            'failed_count': failed,
+            'remaining_count': max(0, total - sent - failed),
+            'percent': 0,
+            'logs': []
+        })
+    return JsonResponse(status_data)
+
+
+def sms_history_view(request):
+    """
+    Displays full audit history of SMS deliveries across all exams or a specific exam.
+    Supports filtering by status (all, sent, failed), search by phone/roll, pagination,
+    and bulk/individual retry of failed messages.
+    """
+    from django.core.paginator import Paginator
+
+    exams = StandaloneExam.objects.all().order_by('-created_at')
+    status_filter = request.GET.get('status', '').strip().lower()
+    exam_filter = request.GET.get('exam_id', '').strip()
+    search_query = request.GET.get('q', '').strip()
+
+    logs_qs = SmsLog.objects.select_related('exam', 'result').all()
+
+    if status_filter in ['sent', 'failed', 'pending']:
+        logs_qs = logs_qs.filter(status=status_filter)
+
+    if exam_filter.isdigit():
+        logs_qs = logs_qs.filter(exam_id=int(exam_filter))
+
+    if search_query:
+        logs_qs = logs_qs.filter(
+            Q(recipient__icontains=search_query) |
+            Q(roll_no__icontains=search_query) |
+            Q(student_name__icontains=search_query)
+        )
+
+    # Summary Statistics
+    base_qs = SmsLog.objects.all()
+    if exam_filter.isdigit():
+        base_qs = base_qs.filter(exam_id=int(exam_filter))
+
+    total_count = base_qs.count()
+    sent_count = base_qs.filter(status='sent').count()
+    failed_count = base_qs.filter(status='failed').count()
+    pending_count = base_qs.filter(status='pending').count()
+    success_rate = round((sent_count / max(total_count, 1)) * 100, 1)
+
+    # 40 items per page
+    paginator = Paginator(logs_qs, 40)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    return render(request, 'dashboard/sms_history.html', {
+        'page_obj': page_obj,
+        'exams': exams,
+        'current_status': status_filter,
+        'current_exam_id': exam_filter,
+        'search_query': search_query,
+        'total_count': total_count,
+        'sent_count': sent_count,
+        'failed_count': failed_count,
+        'pending_count': pending_count,
+        'success_rate': success_rate,
+    })
+
+
+@require_POST
+def sms_retry_single_ajax(request, log_id):
+    """
+    Retries sending an individual failed SMS from history.
+    """
+    log = get_object_or_404(SmsLog, id=log_id)
+    modem_settings = ModemSettings.get_settings()
+    institute = InstituteSettings.get_settings()
+
+    if not modem_settings.com_port:
+        return JsonResponse({'success': False, 'error': 'মডেমের COM পোর্ট কনফিগার করা নেই।'}, status=400)
+
+    norm = normalize_bd_phone(log.recipient)
+    if not norm['is_valid']:
+        log.status = 'failed'
+        log.error_message = f"অকার্যকর মোবাইল নম্বর ({log.recipient})"
+        log.save(update_fields=['status', 'error_message'])
+        return JsonResponse({'success': False, 'error': log.error_message})
+
+    msg_text = log.message_text
+    if (not msg_text or msg_text == '(বার্তা পাঠানো যায়নি)') and log.result and log.exam:
+        msg_text = render_sms_template(modem_settings.sms_template, log.exam, log.result, institute)
+        log.message_text = msg_text
+
+    sms_res = send_sms_via_modem(
+        port=modem_settings.com_port,
+        baudrate=modem_settings.baud_rate,
+        recipient=norm['international'],
+        text=msg_text
+    )
+
+    log.retry_count += 1
+    if sms_res.get('success'):
+        log.status = 'sent'
+        log.sent_at = timezone.now()
+        log.error_message = None
+        log.save(update_fields=['status', 'sent_at', 'error_message', 'retry_count', 'message_text'])
+
+        if log.result:
+            log.result.sms_status = 'sent'
+            log.result.sms_sent_at = timezone.now()
+            log.result.sms_error = None
+            log.result.save(update_fields=['sms_status', 'sms_sent_at', 'sms_error'])
+
+        return JsonResponse({
+            'success': True,
+            'message': f"রোল {log.roll_no} ({log.recipient})-এ পুনরায় এসএমএস সফলভাবে পাঠানো হয়েছে!",
+            'sent_at': log.sent_at.strftime('%d %b, %I:%M %p')
+        })
+    else:
+        log.status = 'failed'
+        log.error_message = sms_res.get('error', 'মোডেম যোগাযোগ ত্রুটি')
+        log.save(update_fields=['status', 'error_message', 'retry_count', 'message_text'])
+
+        if log.result:
+            log.result.sms_status = 'failed'
+            log.result.sms_error = log.error_message
+            log.result.save(update_fields=['sms_status', 'sms_error'])
+
+        return JsonResponse({'success': False, 'error': log.error_message})
+
+
+@require_POST
+def sms_retry_all_failed_ajax(request):
+    """
+    Retries sending all failed SMS in a background worker thread.
+    Can be filtered by exam_id if provided.
+    """
+    import threading
+    exam_id = request.POST.get('exam_id')
+    qs = SmsLog.objects.filter(status='failed')
+    if exam_id and exam_id.isdigit():
+        qs = qs.filter(exam_id=int(exam_id))
+
+    failed_ids = list(qs.values_list('id', flat=True))
+    if not failed_ids:
+        return JsonResponse({'success': False, 'error': 'পুনরায় পাঠানোর মতো কোনো ব্যর্থ এসএমএস নেই।'})
+
+    modem_settings = ModemSettings.get_settings()
+    institute = InstituteSettings.get_settings()
+
+    if not modem_settings.com_port:
+        return JsonResponse({'success': False, 'error': 'মডেমের COM পোর্ট কনফিগার করা নেই।'}, status=400)
+
+    def _retry_worker(log_ids, port, baud, delay, tpl):
+        connection.close()
+        for lid in log_ids:
+            try:
+                item = SmsLog.objects.select_related('exam', 'result').get(id=lid)
+                norm = normalize_bd_phone(item.recipient)
+                if not norm['is_valid']:
+                    continue
+                msg = item.message_text
+                if (not msg or msg == '(বার্তা পাঠানো যায়নি)') and item.result and item.exam:
+                    msg = render_sms_template(tpl, item.exam, item.result, institute)
+                    item.message_text = msg
+
+                res = send_sms_via_modem(port=port, baudrate=baud, recipient=norm['international'], text=msg)
+                item.retry_count += 1
+                if res.get('success'):
+                    item.status = 'sent'
+                    item.sent_at = timezone.now()
+                    item.error_message = None
+                    item.save()
+                    if item.result:
+                        item.result.sms_status = 'sent'
+                        item.result.sms_sent_at = timezone.now()
+                        item.result.sms_error = None
+                        item.result.save(update_fields=['sms_status', 'sms_sent_at', 'sms_error'])
+                else:
+                    item.status = 'failed'
+                    item.error_message = res.get('error')
+                    item.save()
+                time.sleep(delay)
+            except Exception as e:
+                logger.exception(f"Error retrying SMS log {lid}: {e}")
+        connection.close()
+
+    threading.Thread(
+        target=_retry_worker,
+        args=(
+            failed_ids,
+            modem_settings.com_port,
+            modem_settings.baud_rate,
+            modem_settings.delay_seconds,
+            modem_settings.sms_template
+        ),
+        daemon=True
+    ).start()
+
+    return JsonResponse({
+        'success': True,
+        'message': f"মোট {len(failed_ids)}টি ব্যর্থ এসএমএস ব্যাকগ্রাউন্ডে পুনরায় পাঠানো শুরু হয়েছে। আপনি চাইলে অন্য পেজে যেতে পারেন।"
+    })
+
+
+@require_POST
+def sms_clear_history_ajax(request):
+    """Clears SMS logs (e.g. older logs or all)."""
+    filter_type = request.POST.get('filter_type', 'all')
+    if filter_type == 'sent':
+        count, _ = SmsLog.objects.filter(status='sent').delete()
+    elif filter_type == 'failed':
+        count, _ = SmsLog.objects.filter(status='failed').delete()
+    else:
+        count, _ = SmsLog.objects.all().delete()
+    return JsonResponse({'success': True, 'message': f'মোট {count}টি হিস্ট্রি লগ মুছে ফেলা হয়েছে।'})
+
 
 
 
