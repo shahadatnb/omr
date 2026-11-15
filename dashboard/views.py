@@ -730,6 +730,110 @@ def template_editor(request):
 
     if request.method == 'POST':
         action = request.POST.get('action', 'save')
+
+        if action == 'wizard_create':
+            try:
+                w_title = request.POST.get('wizard_title', '').strip() or 'New OMR Template'
+                w_filename = request.POST.get('wizard_filename', '').strip() or 'custom_template.json'
+                if not w_filename.endswith('.json'):
+                    w_filename += '.json'
+                w_filename = os.path.basename(w_filename)
+
+                w_orientation = request.POST.get('wizard_orientation', 'portrait')
+                w_width = int(request.POST.get('wizard_width') or (794 if w_orientation == 'portrait' else 1123))
+                w_height = int(request.POST.get('wizard_height') or (1123 if w_orientation == 'portrait' else 794))
+                w_total_q = int(request.POST.get('wizard_total_q') or 100)
+                w_cols = int(request.POST.get('wizard_cols') or 4)
+                w_roll_digits = int(request.POST.get('wizard_roll_digits') or 6)
+                w_sets = int(request.POST.get('wizard_sets') or 4)
+
+                stem = os.path.splitext(w_filename)[0]
+                sample_rel_url = None
+
+                # Process sample image if provided
+                if 'wizard_sample_image' in request.FILES:
+                    f = request.FILES['wizard_sample_image']
+                    import cv2
+                    import numpy as np
+                    from omr_engine.perspective import find_corner_markers, warp_sheet
+                    file_bytes = np.frombuffer(f.read(), np.uint8)
+                    img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+                    if img is not None:
+                        corners = find_corner_markers(img)
+                        if corners:
+                            warped = warp_sheet(img, corners, output_size=(w_width, w_height))
+                        else:
+                            warped = cv2.resize(img, (w_width, w_height))
+                        out_dir = settings.BASE_DIR / 'media' / 'templates'
+                        out_dir.mkdir(parents=True, exist_ok=True)
+                        cv2.imwrite(str(out_dir / f"{stem}_sample.jpg"), warped)
+                        sample_rel_url = f"/media/templates/{stem}_sample.jpg"
+
+                # Calculate evenly distributed columns
+                q_per_col = (w_total_q + w_cols - 1) // w_cols
+                answer_cols = []
+                margin_x = int(w_width * 0.08)
+                avail_w = w_width - 2 * margin_x
+                col_gap = int(avail_w * 0.04) if w_cols > 1 else 0
+                col_w = int((avail_w - (w_cols - 1) * col_gap) / max(w_cols, 1))
+                top_y = int(w_height * 0.42) if w_orientation == 'portrait' else int(w_height * 0.45)
+                col_h = int(w_height * 0.53) if w_orientation == 'portrait' else int(w_height * 0.48)
+
+                q_curr = 1
+                for i in range(w_cols):
+                    q_start = q_curr
+                    q_end = min(q_start + q_per_col - 1, w_total_q)
+                    q_curr = q_end + 1
+                    col_x = margin_x + i * (col_w + col_gap)
+                    answer_cols.append({
+                        "column_index": i + 1,
+                        "subject": f"কলাম {i+1}",
+                        "q_start": q_start,
+                        "q_end": q_end,
+                        "x": col_x,
+                        "y": top_y,
+                        "w": col_w,
+                        "h": col_h
+                    })
+
+                new_template_data = {
+                    "name": w_title,
+                    "version": "1.0",
+                    "dimensions": {"width": w_width, "height": w_height},
+                    "orientation": w_orientation,
+                    "corner_markers": {"min_area": 100, "max_area": 10000, "aspect_tolerance": 0.4},
+                    "id_grid": {
+                        "x": int(w_width * 0.68),
+                        "y": int(w_height * 0.07),
+                        "w": int(w_width * 0.24),
+                        "h": int(w_height * 0.28),
+                        "columns": w_roll_digits,
+                        "rows": 10
+                    },
+                    "set_region": {
+                        "x": int(w_width * 0.60),
+                        "y": int(w_height * 0.07),
+                        "w": int(w_width * 0.05),
+                        "h": int(w_height * 0.13),
+                        "rows": w_sets if w_sets > 0 else 4,
+                        "columns": 1
+                    },
+                    "answer_columns": answer_cols
+                }
+                if sample_rel_url:
+                    new_template_data["sample_image"] = sample_rel_url
+
+                save_path = settings.OMR_TEMPLATES_DIR / w_filename
+                with open(save_path, 'w', encoding='utf-8') as f:
+                    json.dump(new_template_data, f, indent=2, ensure_ascii=False)
+
+                messages.success(request, f'নতুন টেমপ্লেট "{w_title}" ({w_filename}) সফলভাবে তৈরি হয়েছে!')
+                return redirect(f"{request.path}?template={w_filename}")
+            except Exception as e:
+                logger.exception("Failed wizard creation")
+                messages.error(request, f'টেমপ্লেট তৈরি করতে ব্যর্থ: {e}')
+                return redirect(f"{request.path}?template={selected_filename}")
+
         try:
             new_data_str = request.POST.get('template_json')
             if not new_data_str:
@@ -974,7 +1078,8 @@ def template_test_ajax(request):
 
         try:
             res = process_sheet(str(sample_path), temp_template_path, debug=True)
-            # Pick first 15 answers
+            # Pick first 15 answers for textual display, and return all answers for visual overlay
+            all_answers = {str(k): v for k, v in res.get('answers', {}).items()}
             answers_sample = {str(k): res['answers'][k] for k in list(res['answers'].keys())[:15]} if res.get('answers') else {}
             filled_count = sum(1 for v in res.get('answers', {}).values() if v is not None)
 
@@ -985,6 +1090,7 @@ def template_test_ajax(request):
                 'answered_count': filled_count,
                 'total_questions': len(res.get('answers', {})),
                 'sample_answers': answers_sample,
+                'all_answers': all_answers,
                 'error': res.get('error')
             })
         finally:
@@ -993,6 +1099,150 @@ def template_test_ajax(request):
 
     except Exception as e:
         logger.exception("Template test error")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@require_POST
+def template_autodetect_ajax(request):
+    """
+    Intelligently detect table grid boundaries, answer columns, roll ID grid,
+    and set box from the sheet image using OpenCV morphological operations.
+    """
+    template_filename = request.POST.get('template_filename') or 'admission_challenge_100q.json'
+    stem = os.path.splitext(os.path.basename(template_filename))[0]
+
+    import cv2
+    import numpy as np
+
+    img = None
+    if 'sample_image' in request.FILES:
+        f = request.FILES['sample_image']
+        file_bytes = np.frombuffer(f.read(), np.uint8)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        from omr_engine.perspective import find_corner_markers, warp_sheet
+        target_w = int(request.POST.get('width') or 794)
+        target_h = int(request.POST.get('height') or 1123)
+        if img is not None:
+            corners = find_corner_markers(img)
+            if corners:
+                img = warp_sheet(img, corners, output_size=(target_w, target_h))
+            else:
+                img = cv2.resize(img, (target_w, target_h))
+    else:
+        sample_path = settings.BASE_DIR / 'media' / 'templates' / f"{stem}_sample.jpg"
+        if not sample_path.exists():
+            sample_path = settings.BASE_DIR / 'media' / 'templates' / 'sample_warped.jpg'
+        if sample_path.exists():
+            img = cv2.imread(str(sample_path))
+
+    if img is None:
+        return JsonResponse({'success': False, 'error': 'নমুনা শিটের ইমেজ পাওয়া যায়নি।'}, status=404)
+
+    try:
+        H, W = img.shape[:2]
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        bw = cv2.adaptiveThreshold(~gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 15, -2)
+
+        vert_size = max(H // 40, 10)
+        vert_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, vert_size))
+        vert = cv2.morphologyEx(bw, cv2.MORPH_OPEN, vert_kernel)
+
+        horiz_size = max(W // 40, 10)
+        horiz_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (horiz_size, 1))
+        horiz = cv2.morphologyEx(bw, cv2.MORPH_OPEN, horiz_kernel)
+
+        table = cv2.add(vert, horiz)
+        contours, _ = cv2.findContours(table, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        candidates = []
+        for c in contours:
+            x, y, w, h = cv2.boundingRect(c)
+            if w > 0.95 * W and h > 0.95 * H:
+                continue
+            if w >= 25 and h >= 70:
+                candidates.append({'x': int(x), 'y': int(y), 'w': int(w), 'h': int(h)})
+
+        # 1. Answer columns: tall boxes (h >= 0.35 * H) aligned at similar y level
+        tall_candidates = [b for b in candidates if b['h'] >= 0.35 * H]
+
+        groups = []
+        for b in sorted(tall_candidates, key=lambda x: x['y']):
+            placed = False
+            for g in groups:
+                if abs(g[0]['y'] - b['y']) < 60 and abs(g[0]['h'] - b['h']) < 80:
+                    g.append(b)
+                    placed = True
+                    break
+            if not placed:
+                groups.append([b])
+
+        columns = []
+        if groups:
+            groups.sort(key=lambda g: (-len(g), -g[0]['h']))
+            raw_cols = sorted(groups[0], key=lambda b: b['x'])
+            median_w = sorted([c['w'] for c in raw_cols])[len(raw_cols) // 2]
+            for c in raw_cols:
+                # If two adjacent columns merged into one wide contour, split them
+                if c['w'] >= 1.7 * median_w:
+                    half_w = c['w'] // 2
+                    columns.append({'x': c['x'], 'y': c['y'], 'w': half_w, 'h': c['h']})
+                    columns.append({'x': c['x'] + half_w, 'y': c['y'], 'w': c['w'] - half_w, 'h': c['h']})
+                else:
+                    columns.append(c)
+
+        # 2. Roll candidates: boxes not in tall answer columns, w >= 70, h >= 100
+        roll_candidates = [b for b in candidates if b not in tall_candidates and b['w'] >= 70 and b['h'] >= 100]
+        roll_candidates.sort(key=lambda b: (b['y'], -b['w']))
+
+        # 3. Set candidates: narrow box with aspect ratio >= 1.6, w <= 70, h >= 70
+        set_candidates = [b for b in candidates if b not in tall_candidates and b['w'] <= 70 and b['h'] >= 70 and (b['h'] / max(b['w'], 1)) >= 1.6]
+        set_candidates.sort(key=lambda b: (b['y'], b['x']))
+
+        detected_roll = roll_candidates[0] if roll_candidates else None
+        detected_set = set_candidates[0] if set_candidates else None
+
+        if not columns and not detected_roll:
+            return JsonResponse({
+                'success': False,
+                'error': 'স্বয়ংক্রিয়ভাবে গ্রিড শনাক্ত করা সম্ভব হয়নি। শিটে স্পষ্ট বর্ডার লাইন আছে কি না নিশ্চিত করুন অথবা ক্যানভাসে ড্র মোড ব্যবহার করুন।'
+            })
+
+        return JsonResponse({
+            'success': True,
+            'dimensions': {'width': W, 'height': H},
+            'columns': columns,
+            'roll': detected_roll,
+            'set': detected_set,
+            'total_columns': len(columns),
+            'message': f'স্বয়ংক্রিয়ভাবে {len(columns)}টি কলাম' + (', ১টি রোল গ্রিড' if detected_roll else '') + (', ১টি সেট বক্স' if detected_set else '') + ' শনাক্ত হয়েছে!'
+        })
+    except Exception as e:
+        logger.exception("Autodetect error")
+        return JsonResponse({'success': False, 'error': f'ডিটেকশন ত্রুটি: {str(e)}'}, status=500)
+
+
+@require_POST
+def template_delete_ajax(request):
+    """Safely delete a custom template (except default_100q.json)."""
+    template_filename = request.POST.get('template_filename', '').strip()
+    template_filename = os.path.basename(template_filename)
+    if not template_filename or template_filename == 'default_100q.json':
+        return JsonResponse({'success': False, 'error': 'ডিফল্ট টেমপ্লেট মুছে ফেলা যাবে না।'}, status=400)
+
+    target_path = settings.OMR_TEMPLATES_DIR / template_filename
+    if not target_path.exists():
+        return JsonResponse({'success': False, 'error': 'টেমপ্লেট ফাইলটি পাওয়া যায়নি।'}, status=404)
+
+    try:
+        os.remove(target_path)
+        stem = os.path.splitext(template_filename)[0]
+        sample_path = settings.BASE_DIR / 'media' / 'templates' / f"{stem}_sample.jpg"
+        if sample_path.exists():
+            os.remove(sample_path)
+
+        return JsonResponse({'success': True, 'message': f'"{template_filename}" সফলভাবে মুছে ফেলা হয়েছে।'})
+    except Exception as e:
+        logger.exception("Template delete error")
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 

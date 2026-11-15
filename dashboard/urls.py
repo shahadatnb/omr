@@ -19,6 +19,8 @@ urlpatterns = [
     path('template-editor/test-ajax/', views.template_test_ajax, name='template_test_ajax'),
     path('template-editor/upload-sample-ajax/', views.template_upload_sample_ajax, name='template_upload_sample_ajax'),
     path('template-editor/rotate-sample-ajax/', views.template_rotate_sample_ajax, name='template_rotate_sample_ajax'),
+    path('template-editor/autodetect-ajax/', views.template_autodetect_ajax, name='template_autodetect_ajax'),
+    path('template-editor/delete-ajax/', views.template_delete_ajax, name='template_delete_ajax'),
 
     # AJAX Endpoints for real-time progress & appending to batches
     path('batch/create-ajax/', views.batch_create_ajax, name='batch_create_ajax'),

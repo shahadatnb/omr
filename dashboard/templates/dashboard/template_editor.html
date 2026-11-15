@@ -1,58 +1,93 @@
 {% extends 'dashboard/base.html' %}
 
-{% block title %}ওএমআর টেমপ্লেট এডিটর | Admission Challenge{% endblock %}
+{% block title %}ওএমআর টেমপ্লেট এডিটর ও ডিজাইনার | Admission Challenge{% endblock %}
 
 {% block extra_head %}
 <style>
     .canvas-container {
         position: relative;
-        background-color: #555;
+        background-color: #343a40;
         border-radius: 8px;
         overflow: auto;
         max-height: 85vh;
         box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
         text-align: center;
-        padding: 10px;
+        padding: 12px;
     }
     #omrCanvas {
         background-color: #fff;
         box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-        cursor: crosshair;
+        cursor: default;
         max-width: 100%;
         height: auto;
+        touch-action: none;
     }
     .coord-card {
         border-left: 4px solid #0d6efd;
+        transition: all 0.2s ease;
+    }
+    .coord-card.active-card {
+        box-shadow: 0 0 0 2px #0d6efd, 0 4px 12px rgba(13, 110, 253, 0.25) !important;
+        background-color: #f8fbff;
     }
     .coord-card.set-card {
         border-left-color: #198754;
     }
+    .coord-card.set-card.active-card {
+        box-shadow: 0 0 0 2px #198754, 0 4px 12px rgba(25, 135, 84, 0.25) !important;
+        background-color: #f7fdf9;
+    }
     .coord-card.col-card {
         border-left-color: #6f42c1;
     }
+    .coord-card.col-card.active-card {
+        box-shadow: 0 0 0 2px #6f42c1, 0 4px 12px rgba(111, 66, 193, 0.25) !important;
+        background-color: #faf7ff;
+    }
     .legend-box {
         display: inline-block;
-        width: 14px;
-        height: 14px;
-        margin-right: 6px;
+        width: 13px;
+        height: 13px;
+        margin-right: 5px;
         border-radius: 3px;
         vertical-align: middle;
+    }
+    .nudge-btn {
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+    }
+    .tool-btn.active {
+        background-color: #0d6efd;
+        color: white;
+        border-color: #0d6efd;
     }
 </style>
 {% endblock %}
 
 {% block content %}
+<!-- TOP HEADER WITH ACTIONS -->
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <div>
         <h3 class="fw-bold mb-0">
-            <i class="fa fa-sliders-h text-warning me-2"></i>ওএমআর টেমপ্লেট কনফিগারেশন ও এডিটর
+            <i class="fa fa-sliders-h text-warning me-2"></i>ওএমআর কাস্টমাইজেশন ও টেমপ্লেট ডিজাইনার
         </h3>
-        <p class="text-muted mb-0">OMR শিটের রোল, সেট এবং ১০০ প্রশ্নের উত্তর কলামের স্থানাঙ্ক (Coordinates) সমন্বয় করুন</p>
+        <p class="text-muted mb-0">যে কোনো নতুন ডিজাইনের ওএমআর শিট আপলোড করে মাউস দিয়ে টেনে বা স্বয়ংক্রিয়ভাবে গ্রিড তৈরি করুন</p>
     </div>
     <div class="d-flex gap-2 align-items-center flex-wrap">
+        <!-- New Template Wizard Button -->
+        <button type="button" class="btn btn-primary btn-sm fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#wizardModal">
+            <i class="fa fa-plus-circle me-1"></i> নতুন টেমপ্লেট উইজার্ড
+        </button>
+
+        <!-- Template Selector Dropdown -->
         <div class="input-group input-group-sm">
             <span class="input-group-text bg-white fw-bold"><i class="fa fa-layer-group text-primary me-1"></i>টেমপ্লেট:</span>
-            <select class="form-select form-select-sm" onchange="switchTemplate(this.value)" style="min-width: 220px;">
+            <select class="form-select form-select-sm" onchange="switchTemplate(this.value)" style="min-width: 200px;">
                 {% for t in available_templates %}
                     <option value="{{ t.filename }}" {% if t.filename == current_template_filename %}selected{% endif %}>
                         {{ t.name }} ({{ t.filename }})
@@ -60,23 +95,43 @@
                 {% endfor %}
             </select>
         </div>
-        <button type="button" class="btn btn-outline-warning btn-sm fw-bold" onclick="document.getElementById('sampleFileInput').click()">
-            <i class="fa fa-camera me-1"></i> নমুনা শিট পরিবর্তন
+
+        <!-- Sample Sheet Upload -->
+        <button type="button" class="btn btn-outline-warning btn-sm fw-bold" onclick="document.getElementById('sampleFileInput').click()" title="বর্তমান টেমপ্লেটের জন্য নতুন নমুনা শিট স্ক্যান আপলোড করুন">
+            <i class="fa fa-camera me-1"></i> নমুনা শিট
         </button>
         <input type="file" id="sampleFileInput" accept="image/*" class="d-none" onchange="uploadSampleSheet(this)">
-        <button type="button" class="btn btn-outline-primary btn-sm" onclick="testCoordinates()">
+
+        <!-- Auto-Detect Grid Button -->
+        <button type="button" class="btn btn-outline-info btn-sm fw-bold" onclick="runAutoDetect()" title="নমুনা শিট থেকে স্বয়ংক্রিয়ভাবে গ্রিড ও কলাম শনাক্ত করুন">
+            <i class="fa fa-magic me-1"></i> অটো ডিটেক্ট
+        </button>
+
+        <!-- Test Coordinates Button -->
+        <button type="button" class="btn btn-outline-success btn-sm fw-bold" onclick="testCoordinates()" title="বর্তমান স্থানাঙ্ক দিয়ে ওএমআর রিড টেস্ট করুন">
             <i class="fa fa-vial me-1"></i> টেস্ট করুন
         </button>
-        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#saveAsModal">
-            <i class="fa fa-copy me-1"></i> Save As (নতুন কপি)
+
+        <!-- Save As Copy -->
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#saveAsModal" title="অন্য নামে নতুন কপি হিসেবে সংরক্ষণ">
+            <i class="fa fa-copy me-1"></i> Save As
         </button>
-        <button type="button" class="btn btn-success btn-sm fw-bold" onclick="saveTemplateForm()">
+
+        <!-- Delete Custom Template -->
+        {% if current_template_filename != 'default_100q.json' %}
+        <button type="button" class="btn btn-outline-danger btn-sm" onclick="confirmDeleteTemplate()" title="এই টেমপ্লেটটি মুছে ফেলুন">
+            <i class="fa fa-trash"></i>
+        </button>
+        {% endif %}
+
+        <!-- Save Button -->
+        <button type="button" class="btn btn-success btn-sm fw-bold shadow-sm" onclick="saveTemplateForm()">
             <i class="fa fa-save me-1"></i> সংরক্ষণ করুন
         </button>
     </div>
 </div>
 
-<div id="sampleUploadAlert" class="alert alert-secondary py-2 d-none">
+<div id="sampleUploadAlert" class="alert alert-secondary py-2 d-none shadow-sm">
     <div id="sampleUploadMessage"></div>
 </div>
 
@@ -87,7 +142,7 @@
             <!-- Left: Current Template & Orientation Switch -->
             <div class="d-flex align-items-center gap-2 flex-wrap">
                 <div class="fw-bold small text-dark me-1">
-                    <i class="fa fa-info-circle text-primary me-1"></i> টেমপ্লেট: <strong>{{ template_data.name|default:current_template_filename }}</strong>
+                    <i class="fa fa-file-code text-primary me-1"></i> ফাইল: <strong>{{ current_template_filename }}</strong>
                 </div>
 
                 <div class="vr mx-1 d-none d-md-block"></div>
@@ -95,12 +150,12 @@
                 <!-- Orientation Toggle Buttons -->
                 <div class="d-flex align-items-center gap-1">
                     <span class="fw-bold small text-muted"><i class="fa fa-compass text-secondary me-1"></i>ওরিয়েন্টেশন:</span>
-                    <div class="btn-group btn-group-sm" role="group" aria-label="Orientation Switch">
-                        <button type="button" class="btn btn-primary active fw-bold" id="btnPortrait" onclick="switchOrientation('portrait')" title="পোর্ট্রেট মোড (লম্বালম্বি: ৭৯৪ × ১১২৩ px)">
-                            <i class="fa fa-file-alt me-1"></i> পোর্ট্রেট (Portrait)
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button type="button" class="btn btn-primary active fw-bold" id="btnPortrait" onclick="switchOrientation('portrait')" title="পোর্ট্রেট মোড (লম্বালম্বি)">
+                            <i class="fa fa-file-alt me-1"></i> পোর্ট্রেট
                         </button>
-                        <button type="button" class="btn btn-outline-primary fw-bold" id="btnLandscape" onclick="switchOrientation('landscape')" title="ল্যান্ডস্কেপ মোড (আড়াআড়ি: ১১২৩ × ৭৯৪ px)">
-                            <i class="fa fa-file-image me-1"></i> ল্যান্ডস্কেপ (Landscape)
+                        <button type="button" class="btn btn-outline-primary fw-bold" id="btnLandscape" onclick="switchOrientation('landscape')" title="ল্যান্ডস্কেপ মোড (আড়াআড়ি)">
+                            <i class="fa fa-file-image me-1"></i> ল্যান্ডস্কেপ
                         </button>
                     </div>
                 </div>
@@ -128,15 +183,16 @@
                     </button>
                 </div>
 
-                <span class="badge bg-secondary" id="orientationBadge">পোর্ট্রেট ({{ template_data.dimensions.width|default:794 }}×{{ template_data.dimensions.height|default:1123 }} px)</span>
+                <span class="badge bg-secondary" id="orientationBadge">পোর্ট্রেট</span>
 
                 <div class="dropdown">
                     <button class="btn btn-sm btn-outline-info dropdown-toggle fw-bold" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="আদর্শ স্থানাঙ্ক প্রিসেট">
-                        <i class="fa fa-magic me-1"></i> প্রিসেট
+                        <i class="fa fa-th-list me-1"></i> প্রিসেট
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-                        <li><a class="dropdown-item" href="javascript:void(0)" onclick="applyLandscapePreset()"><i class="fa fa-file-image text-primary me-2"></i>ল্যান্ডস্কেপ আদর্শ গ্রিড (1123×794)</a></li>
-                        <li><a class="dropdown-item" href="javascript:void(0)" onclick="applyPortraitPreset()"><i class="fa fa-file-alt text-success me-2"></i>পোর্ট্রেট স্ট্যান্ডার্ড গ্রিড (794×1123)</a></li>
+                        <li><a class="dropdown-item" href="javascript:void(0)" onclick="applyPortraitPreset()"><i class="fa fa-file-alt text-success me-2"></i>স্ট্যান্ডার্ড পোর্ট্রেট গ্রিড (৪ কলাম ১০০Q)</a></li>
+                        <li><a class="dropdown-item" href="javascript:void(0)" onclick="applyLandscapePreset()"><i class="fa fa-file-image text-primary me-2"></i>স্ট্যান্ডার্ড ল্যান্ডস্কেপ গ্রিড (৪ কলাম ১০০Q)</a></li>
+                        <li><a class="dropdown-item" href="javascript:void(0)" onclick="apply150QPreset()"><i class="fa fa-list-ol text-purple me-2"></i>১৫০ প্রশ্ন গ্রিড (৩ কলাম ১৫০Q)</a></li>
                     </ul>
                 </div>
             </div>
@@ -153,52 +209,125 @@
     <input type="hidden" name="new_filename" id="formNewFilename" value="">
 
     <div class="row g-3">
-        <!-- LEFT COLUMN: INTERACTIVE CANVAS -->
+        <!-- LEFT COLUMN: INTERACTIVE CANVAS WITH DRAWING & NUDGE TOOLBAR -->
         <div class="col-lg-7">
             <div class="card shadow-sm h-100">
-                <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
-                    <div class="small">
-                        <span class="legend-box" style="background:#0d6efd;"></span><strong class="me-2">রোল গ্রিড</strong>
-                        <span class="legend-box" style="background:#198754;"></span><strong class="me-2">সেট বাবল</strong>
-                        <span class="legend-box" style="background:#6f42c1;"></span><strong class="me-2">উত্তর কলাম ১-৪</strong>
+                <!-- CANVAS TOOLBAR -->
+                <div class="card-header bg-white py-2">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <!-- Left: Interactive Tool Mode Switchers -->
+                        <div class="d-flex align-items-center gap-1 flex-wrap">
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button type="button" class="btn btn-outline-primary tool-btn active fw-bold" id="toolSelectBtn" onclick="setToolMode('select')" title="সিলেক্ট ও মুভ মোড: বাক্সে ক্লিক করে হ্যান্ডেল টেনে ছোট-বড় বা ড্র্যাগ করুন">
+                                    <i class="fa fa-mouse-pointer me-1"></i> সিলেক্ট / ড্র্যাগ
+                                </button>
+                                <button type="button" class="btn btn-outline-primary tool-btn fw-bold" id="toolDrawBtn" onclick="setToolMode('draw')" title="সরাসরি ড্র মোড: মাউস দিয়ে ক্যানভাসে টেনে নতুন বাক্স আঁকুন">
+                                    <i class="fa fa-pencil-alt me-1"></i> মাউস দিয়ে ড্র
+                                </button>
+                            </div>
+
+                            <!-- Draw Target Selector (visible in draw mode) -->
+                            <div id="drawTargetGroup" class="d-flex align-items-center gap-1 d-none ms-1">
+                                <span class="small text-muted fw-bold">আঁকুন:</span>
+                                <select class="form-select form-select-sm py-0" id="drawTargetSelect" style="width: 140px;" onchange="onDrawTargetChange(this.value)">
+                                    <option value="id_grid">রোল নম্বর (ID)</option>
+                                    <option value="set_region">সেট বাবল (Set)</option>
+                                    <optgroup label="উত্তর কলামসমূহ" id="drawTargetColGroup">
+                                        <!-- populated dynamically -->
+                                    </optgroup>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Right: Zoom, Nudge & Highlight Controls -->
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <!-- Visual Bubble Overlay Toggle -->
+                            <div class="form-check form-switch form-check-inline m-0 small" title="টেস্ট রেজাল্ট থেকে শনাক্তকৃত বাবলের উপর সবুজ গোল চিহ্ন দেখান">
+                                <input class="form-check-input" type="checkbox" id="showBubbleOverlayCheck" checked onchange="toggleBubbleOverlay(this.checked)">
+                                <label class="form-check-label small fw-bold" for="showBubbleOverlayCheck">বাবল মার্কার</label>
+                            </div>
+
+                            <div class="vr d-none d-md-block"></div>
+
+                            <!-- Zoom Buttons -->
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-secondary" onclick="zoomCanvas(currentScale - 0.15)" title="জুম আউট">-</button>
+                                <button type="button" class="btn btn-outline-secondary" id="zoomLevelBtn" onclick="zoomCanvas(1.0)" title="আসল আকার">১০০%</button>
+                                <button type="button" class="btn btn-outline-secondary" onclick="zoomCanvas(currentScale + 0.15)" title="জুম ইন">+</button>
+                            </div>
+                        </div>
                     </div>
-                    <div class="btn-group btn-group-sm">
-                        <button type="button" class="btn btn-outline-secondary" onclick="zoomCanvas(0.8)">-</button>
-                        <button type="button" class="btn btn-outline-secondary" onclick="zoomCanvas(1.0)">১০০%</button>
-                        <button type="button" class="btn btn-outline-secondary" onclick="zoomCanvas(1.2)">+</button>
+
+                    <!-- SUB-TOOLBAR: ACTIVE REGION STATUS & PIXEL NUDGE CONTROLS -->
+                    <div class="d-flex justify-content-between align-items-center mt-2 pt-2 border-top flex-wrap gap-2 small">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="text-muted">নির্বাচিত:</span>
+                            <span class="badge bg-primary" id="activeRegionBadge">রোল গ্রিড (ID Grid)</span>
+                            <span class="text-muted font-monospace small" id="activeRegionCoords">(X: 0, Y: 0, W: 0, H: 0)</span>
+                        </div>
+
+                        <!-- Pixel Nudge Controller -->
+                        <div class="d-flex align-items-center gap-1">
+                            <span class="text-muted fw-bold me-1">নজ (১px সরান):</span>
+                            <button type="button" class="btn btn-outline-secondary btn-sm nudge-btn" onclick="nudgeActiveRegion(-1, 0)" title="১ পিক্সেল বামে (Keyboard: ◀)"><i class="fa fa-arrow-left"></i></button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm nudge-btn" onclick="nudgeActiveRegion(0, -1)" title="১ পিক্সেল উপরে (Keyboard: ▲)"><i class="fa fa-arrow-up"></i></button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm nudge-btn" onclick="nudgeActiveRegion(0, 1)" title="১ পিক্সেল নিচে (Keyboard: ▼)"><i class="fa fa-arrow-down"></i></button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm nudge-btn" onclick="nudgeActiveRegion(1, 0)" title="১ পিক্সেল ডানে (Keyboard: ▶)"><i class="fa fa-arrow-right"></i></button>
+
+                            <div class="btn-group btn-group-sm ms-1" role="group">
+                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 active" id="nudgeStep1" onclick="setNudgeStep(1)">১px</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" id="nudgeStep5" onclick="setNudgeStep(5)">৫px</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
+
+                <!-- CANVAS ELEMENT -->
                 <div class="card-body p-2 bg-dark rounded-bottom canvas-container text-center">
                     <canvas id="omrCanvas" width="794" height="1123"></canvas>
+                </div>
+                <div class="card-footer bg-light py-1 text-muted small d-flex justify-content-between">
+                    <div><i class="fa fa-info-circle me-1"></i> টিপস: ক্যানভাসে বাক্সে ক্লিক করে সিলেক্ট করুন; টেনে রিসাইজ বা Arrow কী দিয়ে সরান।</div>
+                    <div id="canvasMousePosText" class="font-monospace">X: 0, Y: 0</div>
                 </div>
             </div>
         </div>
 
-        <!-- RIGHT COLUMN: COORDINATE INPUT CONTROLS -->
+        <!-- RIGHT COLUMN: COORDINATE INPUT CONTROLS & DYNAMIC COLUMNS -->
         <div class="col-lg-5" style="max-height: 85vh; overflow-y: auto;">
-            
+
             <!-- 1. ROLL / ID GRID -->
-            <div class="card shadow-sm mb-3 coord-card">
+            <div class="card shadow-sm mb-3 coord-card active-card" id="card_id_grid" onclick="selectRegion('id_grid')">
                 <div class="card-body p-3">
-                    <h6 class="fw-bold text-primary mb-2">
-                        <i class="fa fa-id-card me-1"></i> ১. রেজিস্ট্রেশন / রোল নম্বর গ্রিড (ID Grid)
-                    </h6>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="fw-bold text-primary mb-0">
+                            <span class="legend-box" style="background:#0d6efd;"></span> ১. রোল নম্বর গ্রিড (ID Grid)
+                        </h6>
+                        <div class="d-flex gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" onclick="startDrawTarget('id_grid', event)" title="ক্যানভাসে সরাসরি রোল গ্রিড ড্র করুন">
+                                <i class="fa fa-pencil-alt me-1"></i> ড্র
+                            </button>
+                            <button type="button" class="btn btn-sm btn-light py-0 px-2 text-primary" onclick="selectRegion('id_grid', event)" title="সিলেক্ট করুন">
+                                <i class="fa fa-crosshairs"></i>
+                            </button>
+                        </div>
+                    </div>
                     <div class="row g-2 mb-2">
                         <div class="col-3">
                             <label class="form-label small mb-1">X (বাম)</label>
-                            <input type="number" class="form-control form-control-sm" id="id_x" value="{{ template_data.id_grid.x|default:570 }}" oninput="redrawCanvas()">
+                            <input type="number" class="form-control form-control-sm" id="id_x" value="{{ template_data.id_grid.x|default:570 }}" oninput="onInputCoordinateChange()">
                         </div>
                         <div class="col-3">
                             <label class="form-label small mb-1">Y (উপর)</label>
-                            <input type="number" class="form-control form-control-sm" id="id_y" value="{{ template_data.id_grid.y|default:70 }}" oninput="redrawCanvas()">
+                            <input type="number" class="form-control form-control-sm" id="id_y" value="{{ template_data.id_grid.y|default:70 }}" oninput="onInputCoordinateChange()">
                         </div>
                         <div class="col-3">
                             <label class="form-label small mb-1">Width (প্রস্থ)</label>
-                            <input type="number" class="form-control form-control-sm" id="id_w" value="{{ template_data.id_grid.w|default:190 }}" oninput="redrawCanvas()">
+                            <input type="number" class="form-control form-control-sm" id="id_w" value="{{ template_data.id_grid.w|default:190 }}" oninput="onInputCoordinateChange()">
                         </div>
                         <div class="col-3">
                             <label class="form-label small mb-1">Height (উচ্চতা)</label>
-                            <input type="number" class="form-control form-control-sm" id="id_h" value="{{ template_data.id_grid.h|default:293 }}" oninput="redrawCanvas()">
+                            <input type="number" class="form-control form-control-sm" id="id_h" value="{{ template_data.id_grid.h|default:293 }}" oninput="onInputCoordinateChange()">
                         </div>
                     </div>
                     <div class="row g-2">
@@ -215,132 +344,275 @@
             </div>
 
             <!-- 2. EXAM SET REGION -->
-            <div class="card shadow-sm mb-3 coord-card set-card">
+            <div class="card shadow-sm mb-3 coord-card set-card" id="card_set_region" onclick="selectRegion('set_region')">
                 <div class="card-body p-3">
-                    <h6 class="fw-bold text-success mb-2">
-                        <i class="fa fa-font me-1"></i> ২. প্রশ্ন সেট বাবল (A, B, C, D)
-                    </h6>
-                    <div class="row g-2">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="fw-bold text-success mb-0">
+                            <span class="legend-box" style="background:#198754;"></span> ২. প্রশ্ন সেট বাবল (Set: A, B, C, D)
+                        </h6>
+                        <div class="d-flex gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-success py-0 px-2" onclick="startDrawTarget('set_region', event)" title="ক্যানভাসে সরাসরি সেট বাবল ড্র করুন">
+                                <i class="fa fa-pencil-alt me-1"></i> ড্র
+                            </button>
+                            <button type="button" class="btn btn-sm btn-light py-0 px-2 text-success" onclick="selectRegion('set_region', event)" title="সিলেক্ট করুন">
+                                <i class="fa fa-crosshairs"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-2">
                         <div class="col-3">
                             <label class="form-label small mb-1">X (বাম)</label>
-                            <input type="number" class="form-control form-control-sm" id="set_x" value="{{ template_data.set_region.x|default:516 }}" oninput="redrawCanvas()">
+                            <input type="number" class="form-control form-control-sm" id="set_x" value="{{ template_data.set_region.x|default:516 }}" oninput="onInputCoordinateChange()">
                         </div>
                         <div class="col-3">
                             <label class="form-label small mb-1">Y (উপর)</label>
-                            <input type="number" class="form-control form-control-sm" id="set_y" value="{{ template_data.set_region.y|default:70 }}" oninput="redrawCanvas()">
+                            <input type="number" class="form-control form-control-sm" id="set_y" value="{{ template_data.set_region.y|default:70 }}" oninput="onInputCoordinateChange()">
                         </div>
                         <div class="col-3">
                             <label class="form-label small mb-1">Width (প্রস্থ)</label>
-                            <input type="number" class="form-control form-control-sm" id="set_w" value="{{ template_data.set_region.w|default:34 }}" oninput="redrawCanvas()">
+                            <input type="number" class="form-control form-control-sm" id="set_w" value="{{ template_data.set_region.w|default:34 }}" oninput="onInputCoordinateChange()">
                         </div>
                         <div class="col-3">
                             <label class="form-label small mb-1">Height (উচ্চতা)</label>
-                            <input type="number" class="form-control form-control-sm" id="set_h" value="{{ template_data.set_region.h|default:129 }}" oninput="redrawCanvas()">
+                            <input type="number" class="form-control form-control-sm" id="set_h" value="{{ template_data.set_region.h|default:129 }}" oninput="onInputCoordinateChange()">
+                        </div>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label small mb-1">সেট সারি (সারি সংখ্যা)</label>
+                            <input type="number" class="form-control form-control-sm" id="set_rows" value="{{ template_data.set_region.rows|default:4 }}" oninput="redrawCanvas()">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small mb-1">সেট কলাম</label>
+                            <input type="number" class="form-control form-control-sm" id="set_cols" value="{{ template_data.set_region.columns|default:1 }}" oninput="redrawCanvas()">
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- 3. ANSWER COLUMNS -->
+            <!-- 3. DYNAMIC ANSWER COLUMNS CARD -->
             <div class="card shadow-sm mb-3 coord-card col-card">
                 <div class="card-body p-3">
-                    <h6 class="fw-bold text-purple mb-2" style="color: #6f42c1;">
-                        <i class="fa fa-list-ol me-1"></i> ৩. উত্তর কলামসমূহ ({% if template_data.answer_columns %}{{ template_data.answer_columns|length }}টি কলাম{% else %}৪টি কলাম{% endif %})
-                    </h6>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="fw-bold text-purple mb-0" style="color: #6f42c1;">
+                            <span class="legend-box" style="background:#6f42c1;"></span> ৩. উত্তর কলামসমূহ (<span id="colCountText">০টি কলাম</span>)
+                        </h6>
+                        <button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="addNewColumn()">
+                            <i class="fa fa-plus me-1"></i> কলাম যোগ করুন
+                        </button>
+                    </div>
 
-                    {% if template_data.answer_columns %}
-                        {% for col in template_data.answer_columns %}
-                        <div class="mb-2 p-2 bg-light rounded answer-col-block" data-col-index="{{ forloop.counter }}">
-                            <div class="fw-bold small mb-1 text-primary d-flex justify-content-between align-items-center">
-                                <span>কলাম {{ forloop.counter }} (প্রশ্ন {{ col.q_start }} – {{ col.q_end }}):</span>
-                                {% if col.subject %}<span class="badge bg-secondary">{{ col.subject }}</span>{% endif %}
-                            </div>
-                            <div class="row g-2">
-                                <div class="col-3"><label class="small text-muted">X</label><input type="number" class="form-control form-control-sm col-input-x" id="col{{ forloop.counter }}_x" value="{{ col.x }}" oninput="redrawCanvas()"></div>
-                                <div class="col-3"><label class="small text-muted">Y</label><input type="number" class="form-control form-control-sm col-input-y" id="col{{ forloop.counter }}_y" value="{{ col.y }}" oninput="redrawCanvas()"></div>
-                                <div class="col-3"><label class="small text-muted">W</label><input type="number" class="form-control form-control-sm col-input-w" id="col{{ forloop.counter }}_w" value="{{ col.w }}" oninput="redrawCanvas()"></div>
-                                <div class="col-3"><label class="small text-muted">H</label><input type="number" class="form-control form-control-sm col-input-h" id="col{{ forloop.counter }}_h" value="{{ col.h }}" oninput="redrawCanvas()"></div>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    {% else %}
-                        <div class="mb-2 p-2 bg-light rounded answer-col-block" data-col-index="1">
-                            <div class="fw-bold small mb-1 text-primary">কলাম ১ (প্রশ্ন ১ – ২৫):</div>
-                            <div class="row g-2">
-                                <div class="col-3"><label class="small text-muted">X</label><input type="number" class="form-control form-control-sm col-input-x" id="col1_x" value="78" oninput="redrawCanvas()"></div>
-                                <div class="col-3"><label class="small text-muted">Y</label><input type="number" class="form-control form-control-sm col-input-y" id="col1_y" value="490" oninput="redrawCanvas()"></div>
-                                <div class="col-3"><label class="small text-muted">W</label><input type="number" class="form-control form-control-sm col-input-w" id="col1_w" value="128" oninput="redrawCanvas()"></div>
-                                <div class="col-3"><label class="small text-muted">H</label><input type="number" class="form-control form-control-sm col-input-h" id="col1_h" value="617" oninput="redrawCanvas()"></div>
-                            </div>
-                        </div>
-                        <div class="mb-2 p-2 bg-light rounded answer-col-block" data-col-index="2">
-                            <div class="fw-bold small mb-1 text-primary">কলাম ২ (প্রশ্ন ২৬ – ৫০):</div>
-                            <div class="row g-2">
-                                <div class="col-3"><label class="small text-muted">X</label><input type="number" class="form-control form-control-sm col-input-x" id="col2_x" value="264" oninput="redrawCanvas()"></div>
-                                <div class="col-3"><label class="small text-muted">Y</label><input type="number" class="form-control form-control-sm col-input-y" id="col2_y" value="489" oninput="redrawCanvas()"></div>
-                                <div class="col-3"><label class="small text-muted">W</label><input type="number" class="form-control form-control-sm col-input-w" id="col2_w" value="128" oninput="redrawCanvas()"></div>
-                                <div class="col-3"><label class="small text-muted">H</label><input type="number" class="form-control form-control-sm col-input-h" id="col2_h" value="618" oninput="redrawCanvas()"></div>
-                            </div>
-                        </div>
-                        <div class="mb-2 p-2 bg-light rounded answer-col-block" data-col-index="3">
-                            <div class="fw-bold small mb-1 text-primary">কলাম ৩ (প্রশ্ন ৫১ – ৭৫):</div>
-                            <div class="row g-2">
-                                <div class="col-3"><label class="small text-muted">X</label><input type="number" class="form-control form-control-sm col-input-x" id="col3_x" value="448" oninput="redrawCanvas()"></div>
-                                <div class="col-3"><label class="small text-muted">Y</label><input type="number" class="form-control form-control-sm col-input-y" id="col3_y" value="493" oninput="redrawCanvas()"></div>
-                                <div class="col-3"><label class="small text-muted">W</label><input type="number" class="form-control form-control-sm col-input-w" id="col3_w" value="128" oninput="redrawCanvas()"></div>
-                                <div class="col-3"><label class="small text-muted">H</label><input type="number" class="form-control form-control-sm col-input-h" id="col3_h" value="614" oninput="redrawCanvas()"></div>
-                            </div>
-                        </div>
-                        <div class="mb-2 p-2 bg-light rounded answer-col-block" data-col-index="4">
-                            <div class="fw-bold small mb-1 text-primary">কলাম ৪ (প্রশ্ন ৭৬ – ১০০):</div>
-                            <div class="row g-2">
-                                <div class="col-3"><label class="small text-muted">X</label><input type="number" class="form-control form-control-sm col-input-x" id="col4_x" value="633" oninput="redrawCanvas()"></div>
-                                <div class="col-3"><label class="small text-muted">Y</label><input type="number" class="form-control form-control-sm col-input-y" id="col4_y" value="494" oninput="redrawCanvas()"></div>
-                                <div class="col-3"><label class="small text-muted">W</label><input type="number" class="form-control form-control-sm col-input-w" id="col4_w" value="128" oninput="redrawCanvas()"></div>
-                                <div class="col-3"><label class="small text-muted">H</label><input type="number" class="form-control form-control-sm col-input-h" id="col4_h" value="613" oninput="redrawCanvas()"></div>
-                            </div>
-                        </div>
-                    {% endif %}
-
+                    <!-- CONTAINER FOR DYNAMIC COLUMNS -->
+                    <div id="answerColumnsContainer">
+                        <!-- Populated by JavaScript from template_data -->
+                    </div>
                 </div>
             </div>
 
             <!-- TEST RESULT ALERT BOX -->
-            <div id="testResultBox" class="alert alert-secondary py-3 d-none">
-                <h6 class="fw-bold mb-2"><i class="fa fa-chart-bar me-1"></i> টেস্ট রেজাল্ট:</h6>
+            <div id="testResultBox" class="alert alert-secondary py-3 d-none shadow-sm">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="fw-bold mb-0"><i class="fa fa-chart-bar me-1"></i> ওএমআর টেস্ট ফলাফল:</h6>
+                    <button type="button" class="btn-close btn-sm" onclick="document.getElementById('testResultBox').classList.add('d-none')"></button>
+                </div>
                 <div id="testResultDetails" class="small"></div>
             </div>
 
         </div>
     </div>
 </form>
+
+<!-- NEW TEMPLATE WIZARD MODAL -->
+<div class="modal fade" id="wizardModal" tabindex="-1" aria-labelledby="wizardModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" action="{% url 'dashboard:template_editor' %}" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="wizard_create">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title fw-bold" id="wizardModalLabel">
+                        <i class="fa fa-magic me-2"></i>নতুন ওএমআর শিট টেমপ্লেট উইজার্ড
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <p class="text-muted">আপনার নতুন ডিজাইনের ওএমআর শিটের বিবরণ দিন। সিস্টেম স্বয়ংক্রিয়ভাবে উপযোগী গ্রিড ও স্থানাঙ্ক তৈরি করে দেবে।</p>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">টেমপ্লেটের নাম <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="wizard_title" placeholder="যেমন: Cadet Admission 150Q" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">ফাইলের নাম (.json) <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="wizard_filename" placeholder="যেমন: cadet_150q.json" required>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">ওরিয়েন্টেশন (কাগজের দিক)</label>
+                            <select class="form-select" name="wizard_orientation" id="wizardOrientationSelect" onchange="onWizardOrientationChange(this.value)">
+                                <option value="portrait" selected>পোর্ট্রেট - লম্বালম্বি (A4: 794 × 1123 px)</option>
+                                <option value="landscape">ল্যান্ডস্কেপ - আড়াআড়ি (A4: 1123 × 794 px)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">প্রস্থ (W px)</label>
+                            <input type="number" class="form-control" name="wizard_width" id="wizardWidth" value="794">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">উচ্চতা (H px)</label>
+                            <input type="number" class="form-control" name="wizard_height" id="wizardHeight" value="1123">
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">মোট প্রশ্ন সংখ্যা</label>
+                            <input type="number" class="form-control" name="wizard_total_q" value="100" min="10" max="300">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">উত্তর কলাম সংখ্যা</label>
+                            <select class="form-select" name="wizard_cols">
+                                <option value="1">১টি কলাম</option>
+                                <option value="2">২টি কলাম</option>
+                                <option value="3">৩টি কলাম</option>
+                                <option value="4" selected>৪টি কলাম</option>
+                                <option value="5">৫টি কলাম</option>
+                                <option value="6">৬টি কলাম</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">রোল ডিজিট সংখ্যা</label>
+                            <input type="number" class="form-control" name="wizard_roll_digits" value="6" min="1" max="12">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">সেট অপশন</label>
+                            <select class="form-select" name="wizard_sets">
+                                <option value="4" selected>৪টি সেট (A, B, C, D)</option>
+                                <option value="2">২টি সেট (A, B)</option>
+                                <option value="0">কোনো সেট নেই</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label fw-bold">নমুনা ওএমআর শিটের ছবি (ঐচ্ছিক কিন্তু বাঞ্ছনীয়)</label>
+                        <input type="file" class="form-control" name="wizard_sample_image" accept="image/*">
+                        <div class="form-text">আপনার নতুন ওএমআর শিটের একটি স্পষ্ট বা স্ক্যান করা ছবি দিলে ক্যানভাসে সরাসরি বসানো যাবে।</div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">বাতিল</button>
+                    <button type="submit" class="btn btn-primary fw-bold">
+                        <i class="fa fa-check me-1"></i> টেমপ্লেট তৈরি ও এডিটর চালু করুন
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- AUTO-DETECT RESULT MODAL -->
+<div class="modal fade" id="autodetectModal" tabindex="-1" aria-labelledby="autodetectModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title fw-bold" id="autodetectModalLabel">
+                    <i class="fa fa-magic me-2"></i>স্বয়ংক্রিয় গ্রিড শনাক্তকরণ ফলাফল
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="autodetectModalBody">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">বাতিল</button>
+                <button type="button" class="btn btn-success fw-bold" onclick="applyAutoDetectedCoordinates()">
+                    <i class="fa fa-check me-1"></i> হ্যাঁ, এই স্থানাঙ্কগুলো এডিটরে বসান
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- SAVE AS MODAL -->
+<div class="modal fade" id="saveAsModal" tabindex="-1" aria-labelledby="saveAsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="saveAsModalLabel">
+                    <i class="fa fa-copy text-primary me-2"></i>নতুন টেমপ্লেট হিসেবে সেভ করুন (Save As)
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="saveAsTitle" class="form-label fw-bold">টেমপ্লেটের নাম / টাইটেল</label>
+                    <input type="text" class="form-control" id="saveAsTitle" placeholder="যেমন: Cadet College 150Q" value="{{ template_data.name|default:'' }} (Copy)">
+                </div>
+                <div class="mb-3">
+                    <label for="saveAsFilename" class="form-label fw-bold">ফাইলের নাম (.json)</label>
+                    <input type="text" class="form-control" id="saveAsFilename" placeholder="যেমন: cadet_college_150q.json">
+                    <div class="form-text">ইংরেজি অক্ষর ও আন্ডারস্কোর ব্যবহার করুন। যেমন: <code>custom_exam_100q.json</code></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">বাতিল</button>
+                <button type="button" class="btn btn-primary fw-bold" onclick="submitSaveAs()">
+                    <i class="fa fa-check me-1"></i> সংরক্ষণ করুন
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+// ==============================================================================
+// 1. DATA STATE & INITIALIZATION
+// ==============================================================================
+const templateData = {{ template_json_str|safe }};
 const bgImage = new Image();
 bgImage.src = "{{ sample_image_url }}";
 
 const canvas = document.getElementById('omrCanvas');
 const ctx = canvas.getContext('2d');
-let currentScale = 1.0;
 
-// Set initial answer column values from template_data if available
-const templateData = {{ template_json_str|safe }};
-if (templateData && templateData.answer_columns) {
-    templateData.answer_columns.forEach((col, idx) => {
-        const xEl = document.getElementById(`col${idx+1}_x`);
-        const yEl = document.getElementById(`col${idx+1}_y`);
-        const wEl = document.getElementById(`col${idx+1}_w`);
-        const hEl = document.getElementById(`col${idx+1}_h`);
-        if (xEl && col.x !== undefined) xEl.value = col.x;
-        if (yEl && col.y !== undefined) yEl.value = col.y;
-        if (wEl && col.w !== undefined) wEl.value = col.w;
-        if (hEl && col.h !== undefined) hEl.value = col.h;
-    });
+let currentScale = 1.0;
+let editorMode = 'select'; // 'select' | 'draw'
+let currentDrawTarget = 'id_grid';
+let activeRegion = 'id_grid'; // 'id_grid', 'set_region', or 'col_1', 'col_2'...
+let currentNudgeStep = 1;
+
+let isMouseDown = false;
+let dragAction = null; // 'move' or handle: 'nw', 'ne', 'se', 'sw', 'n', 's', 'e', 'w'
+let dragStartX = 0, dragStartY = 0;
+let dragOrigBox = { x: 0, y: 0, w: 0, h: 0 };
+
+let lastAutoDetectResult = null;
+let testBubbleOverlays = [];
+let showBubbleOverlays = true;
+
+// Initialize answer columns structure from templateData
+let answerColumns = [];
+if (templateData && templateData.answer_columns && templateData.answer_columns.length > 0) {
+    answerColumns = JSON.parse(JSON.stringify(templateData.answer_columns));
+} else {
+    // Default 4 columns 100Q
+    answerColumns = [
+        { column_index: 1, subject: "কলাম ১", q_start: 1, q_end: 25, x: 78, y: 416, w: 128, h: 690 },
+        { column_index: 2, subject: "কলাম ২", q_start: 26, q_end: 50, x: 264, y: 416, w: 128, h: 690 },
+        { column_index: 3, subject: "কলাম ৩", q_start: 51, q_end: 75, x: 448, y: 416, w: 128, h: 690 },
+        { column_index: 4, subject: "কলাম ৪", q_start: 76, q_end: 100, x: 633, y: 416, w: 128, h: 690 }
+    ];
 }
 
-// Initialize canvas dimensions from templateData or default
+// Initialize dimensions
 let initW = 794;
 let initH = 1123;
 if (templateData && templateData.dimensions) {
@@ -351,6 +623,642 @@ document.getElementById('dim_width').value = initW;
 document.getElementById('dim_height').value = initH;
 applyCanvasDimensions();
 
+renderAnswerColumnsUI();
+updateDrawTargetDropdown();
+
+bgImage.onload = function() {
+    redrawCanvas();
+};
+
+// ==============================================================================
+// 2. DYNAMIC ANSWER COLUMNS MANAGEMENT
+// ==============================================================================
+function renderAnswerColumnsUI() {
+    const container = document.getElementById('answerColumnsContainer');
+    container.innerHTML = '';
+    document.getElementById('colCountText').innerText = `${answerColumns.length}টি কলাম`;
+
+    answerColumns.forEach((col, idx) => {
+        const colNum = idx + 1;
+        const regionKey = `col_${colNum}`;
+        const isActive = (activeRegion === regionKey);
+
+        const card = document.createElement('div');
+        card.className = `mb-2 p-2 bg-light rounded border answer-col-block ${isActive ? 'active-col-block' : ''}`;
+        card.id = `card_col_${colNum}`;
+        card.onclick = (e) => {
+            if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') {
+                selectRegion(regionKey);
+            }
+        };
+
+        card.innerHTML = `
+            <div class="fw-bold small mb-1 d-flex justify-content-between align-items-center">
+                <span class="text-purple" style="color:#6f42c1;">
+                    <i class="fa fa-columns me-1"></i>কলাম ${colNum} (প্রশ্ন ${col.q_start} – ${col.q_end}):
+                </span>
+                <div class="d-flex align-items-center gap-1">
+                    <input type="text" class="form-control form-control-sm py-0 px-1 text-center" style="width: 90px; height: 22px; font-size: 11px;" 
+                           value="${col.subject || ''}" placeholder="বিষয়..." oninput="updateColSubject(${idx}, this.value)">
+                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1" style="font-size: 11px;" onclick="startDrawTarget('${regionKey}', event)" title="ক্যানভাসে ড্র করুন">
+                        <i class="fa fa-pencil-alt"></i>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-light py-0 px-1 text-primary" style="font-size: 11px;" onclick="selectRegion('${regionKey}', event)" title="সিলেক্ট">
+                        <i class="fa fa-crosshairs"></i>
+                    </button>
+                    ${answerColumns.length > 1 ? `
+                    <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1" style="font-size: 11px;" onclick="deleteColumn(${idx}, event)" title="কলামটি মুছুন">
+                        <i class="fa fa-trash"></i>
+                    </button>` : ''}
+                </div>
+            </div>
+            <div class="row g-1 mb-1">
+                <div class="col-6">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text px-1 py-0 small" style="font-size: 10px;">শুরু Q</span>
+                        <input type="number" class="form-control form-control-sm px-1 py-0" value="${col.q_start}" oninput="updateColQuestions(${idx}, 'start', this.value)">
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text px-1 py-0 small" style="font-size: 10px;">শেষ Q</span>
+                        <input type="number" class="form-control form-control-sm px-1 py-0" value="${col.q_end}" oninput="updateColQuestions(${idx}, 'end', this.value)">
+                    </div>
+                </div>
+            </div>
+            <div class="row g-1">
+                <div class="col-3">
+                    <div class="input-group input-group-sm"><span class="input-group-text px-1 py-0 small" style="font-size: 10px;">X</span>
+                    <input type="number" class="form-control form-control-sm px-1 py-0 col-inp-x" value="${col.x}" oninput="updateColCoord(${idx}, 'x', this.value)"></div>
+                </div>
+                <div class="col-3">
+                    <div class="input-group input-group-sm"><span class="input-group-text px-1 py-0 small" style="font-size: 10px;">Y</span>
+                    <input type="number" class="form-control form-control-sm px-1 py-0 col-inp-y" value="${col.y}" oninput="updateColCoord(${idx}, 'y', this.value)"></div>
+                </div>
+                <div class="col-3">
+                    <div class="input-group input-group-sm"><span class="input-group-text px-1 py-0 small" style="font-size: 10px;">W</span>
+                    <input type="number" class="form-control form-control-sm px-1 py-0 col-inp-w" value="${col.w}" oninput="updateColCoord(${idx}, 'w', this.value)"></div>
+                </div>
+                <div class="col-3">
+                    <div class="input-group input-group-sm"><span class="input-group-text px-1 py-0 small" style="font-size: 10px;">H</span>
+                    <input type="number" class="form-control form-control-sm px-1 py-0 col-inp-h" value="${col.h}" oninput="updateColCoord(${idx}, 'h', this.value)"></div>
+                </div>
+            </div>
+        `;
+        container.appendChild(card);
+    });
+}
+
+function updateDrawTargetDropdown() {
+    const colGroup = document.getElementById('drawTargetColGroup');
+    colGroup.innerHTML = '';
+    answerColumns.forEach((col, idx) => {
+        const opt = document.createElement('option');
+        opt.value = `col_${idx + 1}`;
+        opt.innerText = `কলাম ${idx + 1} (${col.subject || `Q${col.q_start}-${col.q_end}`})`;
+        colGroup.appendChild(opt);
+    });
+}
+
+function addNewColumn() {
+    const newIdx = answerColumns.length;
+    let lastCol = answerColumns[answerColumns.length - 1];
+    let newQStart = lastCol ? (parseInt(lastCol.q_end) + 1) : 1;
+    let qCount = lastCol ? (parseInt(lastCol.q_end) - parseInt(lastCol.q_start) + 1) : 25;
+    let newQEnd = newQStart + qCount - 1;
+
+    let newX = lastCol ? (parseInt(lastCol.x) + parseInt(lastCol.w) + 20) : 100;
+    let newY = lastCol ? parseInt(lastCol.y) : 400;
+    let newW = lastCol ? parseInt(lastCol.w) : 130;
+    let newH = lastCol ? parseInt(lastCol.h) : 600;
+
+    // Keep within bounds
+    if (newX + newW > canvas.width) {
+        newX = Math.max(20, canvas.width - newW - 20);
+    }
+
+    answerColumns.push({
+        column_index: newIdx + 1,
+        subject: `কলাম ${newIdx + 1}`,
+        q_start: newQStart,
+        q_end: newQEnd,
+        x: newX,
+        y: newY,
+        w: newW,
+        h: newH
+    });
+
+    renderAnswerColumnsUI();
+    updateDrawTargetDropdown();
+    selectRegion(`col_${newIdx + 1}`);
+    redrawCanvas();
+}
+
+function deleteColumn(idx, event) {
+    if (event) event.stopPropagation();
+    if (answerColumns.length <= 1) {
+        alert('কমপক্ষে ১টি উত্তর কলাম থাকতে হবে।');
+        return;
+    }
+    if (confirm(`আপনি কি কলাম ${idx + 1} মুছে ফেলতে চান?`)) {
+        answerColumns.splice(idx, 1);
+        // Re-index remaining
+        answerColumns.forEach((c, i) => { c.column_index = i + 1; });
+        renderAnswerColumnsUI();
+        updateDrawTargetDropdown();
+        selectRegion('id_grid');
+        redrawCanvas();
+    }
+}
+
+function updateColCoord(idx, field, val) {
+    if (!answerColumns[idx]) return;
+    answerColumns[idx][field] = parseInt(val) || 0;
+    updateActiveRegionBadge();
+    redrawCanvas();
+}
+
+function updateColQuestions(idx, type, val) {
+    if (!answerColumns[idx]) return;
+    if (type === 'start') answerColumns[idx].q_start = parseInt(val) || 1;
+    if (type === 'end') answerColumns[idx].q_end = parseInt(val) || 1;
+    redrawCanvas();
+}
+
+function updateColSubject(idx, val) {
+    if (!answerColumns[idx]) return;
+    answerColumns[idx].subject = val;
+    redrawCanvas();
+}
+
+// ==============================================================================
+// 3. REGION SELECTION & TOOL MODES
+// ==============================================================================
+function selectRegion(regionKey, event) {
+    if (event) event.stopPropagation();
+    activeRegion = regionKey;
+
+    // Highlight corresponding card in right panel
+    document.querySelectorAll('.coord-card').forEach(c => c.classList.remove('active-card'));
+    document.querySelectorAll('.answer-col-block').forEach(c => c.classList.remove('active-card', 'border-primary'));
+
+    if (regionKey === 'id_grid') {
+        const c = document.getElementById('card_id_grid');
+        if (c) { c.classList.add('active-card'); c.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+    } else if (regionKey === 'set_region') {
+        const c = document.getElementById('card_set_region');
+        if (c) { c.classList.add('active-card'); c.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+    } else if (regionKey.startsWith('col_')) {
+        const c = document.getElementById(`card_${regionKey}`);
+        if (c) { c.classList.add('active-card', 'border-primary'); c.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+    }
+
+    updateActiveRegionBadge();
+    redrawCanvas();
+}
+
+function setToolMode(mode) {
+    editorMode = mode;
+    const selectBtn = document.getElementById('toolSelectBtn');
+    const drawBtn = document.getElementById('toolDrawBtn');
+    const drawGroup = document.getElementById('drawTargetGroup');
+
+    if (mode === 'draw') {
+        drawBtn.className = 'btn btn-primary tool-btn active fw-bold';
+        selectBtn.className = 'btn btn-outline-primary tool-btn fw-bold';
+        drawGroup.classList.remove('d-none');
+        canvas.style.cursor = 'crosshair';
+    } else {
+        selectBtn.className = 'btn btn-primary tool-btn active fw-bold';
+        drawBtn.className = 'btn btn-outline-primary tool-btn fw-bold';
+        drawGroup.classList.add('d-none');
+        canvas.style.cursor = 'default';
+    }
+}
+
+function startDrawTarget(targetKey, event) {
+    if (event) event.stopPropagation();
+    selectRegion(targetKey);
+    setToolMode('draw');
+    document.getElementById('drawTargetSelect').value = targetKey;
+    currentDrawTarget = targetKey;
+}
+
+function onDrawTargetChange(val) {
+    currentDrawTarget = val;
+    selectRegion(val);
+}
+
+function getRegionBox(key) {
+    if (key === 'id_grid') {
+        return {
+            x: parseInt(document.getElementById('id_x').value) || 0,
+            y: parseInt(document.getElementById('id_y').value) || 0,
+            w: parseInt(document.getElementById('id_w').value) || 0,
+            h: parseInt(document.getElementById('id_h').value) || 0
+        };
+    } else if (key === 'set_region') {
+        return {
+            x: parseInt(document.getElementById('set_x').value) || 0,
+            y: parseInt(document.getElementById('set_y').value) || 0,
+            w: parseInt(document.getElementById('set_w').value) || 0,
+            h: parseInt(document.getElementById('set_h').value) || 0
+        };
+    } else if (key.startsWith('col_')) {
+        const idx = parseInt(key.split('_')[1]) - 1;
+        if (answerColumns[idx]) {
+            return {
+                x: answerColumns[idx].x,
+                y: answerColumns[idx].y,
+                w: answerColumns[idx].w,
+                h: answerColumns[idx].h
+            };
+        }
+    }
+    return { x: 0, y: 0, w: 0, h: 0 };
+}
+
+function setRegionBox(key, x, y, w, h) {
+    x = Math.max(0, Math.round(x));
+    y = Math.max(0, Math.round(y));
+    w = Math.max(10, Math.round(w));
+    h = Math.max(10, Math.round(h));
+
+    if (key === 'id_grid') {
+        document.getElementById('id_x').value = x;
+        document.getElementById('id_y').value = y;
+        document.getElementById('id_w').value = w;
+        document.getElementById('id_h').value = h;
+    } else if (key === 'set_region') {
+        document.getElementById('set_x').value = x;
+        document.getElementById('set_y').value = y;
+        document.getElementById('set_w').value = w;
+        document.getElementById('set_h').value = h;
+    } else if (key.startsWith('col_')) {
+        const idx = parseInt(key.split('_')[1]) - 1;
+        if (answerColumns[idx]) {
+            answerColumns[idx].x = x;
+            answerColumns[idx].y = y;
+            answerColumns[idx].w = w;
+            answerColumns[idx].h = h;
+            // update inputs in UI
+            const cBlock = document.getElementById(`card_col_${idx + 1}`);
+            if (cBlock) {
+                const inpX = cBlock.querySelector('.col-inp-x');
+                const inpY = cBlock.querySelector('.col-inp-y');
+                const inpW = cBlock.querySelector('.col-inp-w');
+                const inpH = cBlock.querySelector('.col-inp-h');
+                if (inpX) inpX.value = x;
+                if (inpY) inpY.value = y;
+                if (inpW) inpW.value = w;
+                if (inpH) inpH.value = h;
+            }
+        }
+    }
+    updateActiveRegionBadge();
+}
+
+function updateActiveRegionBadge() {
+    const badge = document.getElementById('activeRegionBadge');
+    const coordsText = document.getElementById('activeRegionCoords');
+    const box = getRegionBox(activeRegion);
+
+    if (activeRegion === 'id_grid') {
+        badge.className = 'badge bg-primary';
+        badge.innerText = 'রোল গ্রিড (ID Grid)';
+    } else if (activeRegion === 'set_region') {
+        badge.className = 'badge bg-success';
+        badge.innerText = 'সেট বাবল (Set)';
+    } else if (activeRegion.startsWith('col_')) {
+        const idx = parseInt(activeRegion.split('_')[1]) - 1;
+        const col = answerColumns[idx];
+        badge.className = 'badge bg-purple';
+        badge.style.backgroundColor = '#6f42c1';
+        badge.innerText = `কলাম ${idx + 1} (${col ? col.subject || `Q${col.q_start}-${col.q_end}` : ''})`;
+    }
+    coordsText.innerText = `(X: ${box.x}, Y: ${box.y}, W: ${box.w}, H: ${box.h})`;
+}
+
+function onInputCoordinateChange() {
+    updateActiveRegionBadge();
+    redrawCanvas();
+}
+
+// ==============================================================================
+// 4. PIXEL NUDGE & KEYBOARD CONTROLS
+// ==============================================================================
+function setNudgeStep(step) {
+    currentNudgeStep = step;
+    document.getElementById('nudgeStep1').classList.toggle('active', step === 1);
+    document.getElementById('nudgeStep5').classList.toggle('active', step === 5);
+}
+
+function nudgeActiveRegion(dx, dy) {
+    const step = currentNudgeStep;
+    const box = getRegionBox(activeRegion);
+    setRegionBox(activeRegion, box.x + dx * step, box.y + dy * step, box.w, box.h);
+    redrawCanvas();
+}
+
+window.addEventListener('keydown', function(e) {
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
+        return; // do not hijack when typing in fields
+    }
+    const step = e.shiftKey ? (currentNudgeStep * 5) : currentNudgeStep;
+    if (e.key === 'ArrowLeft') { nudgeActiveRegion(-1, 0); e.preventDefault(); }
+    else if (e.key === 'ArrowRight') { nudgeActiveRegion(1, 0); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { nudgeActiveRegion(0, -1); e.preventDefault(); }
+    else if (e.key === 'ArrowDown') { nudgeActiveRegion(0, 1); e.preventDefault(); }
+});
+
+// ==============================================================================
+// 5. MOUSE INTERACTION ON CANVAS (MOVE, RESIZE, DRAW)
+// ==============================================================================
+function getCanvasMousePos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+        x: Math.round((e.clientX - rect.left) * scaleX),
+        y: Math.round((e.clientY - rect.top) * scaleY)
+    };
+}
+
+function getHandleUnderMouse(pos, box) {
+    const hs = 10; // handle size
+    const handles = {
+        'nw': { x: box.x, y: box.y },
+        'ne': { x: box.x + box.w, y: box.y },
+        'se': { x: box.x + box.w, y: box.y + box.h },
+        'sw': { x: box.x, y: box.y + box.h },
+        'n':  { x: box.x + box.w / 2, y: box.y },
+        's':  { x: box.x + box.w / 2, y: box.y + box.h },
+        'w':  { x: box.x, y: box.y + box.h / 2 },
+        'e':  { x: box.x + box.w, y: box.y + box.h / 2 }
+    };
+    for (const [key, h] of Object.entries(handles)) {
+        if (Math.abs(pos.x - h.x) <= hs && Math.abs(pos.y - h.y) <= hs) {
+            return key;
+        }
+    }
+    return null;
+}
+
+function isInsideBox(pos, box) {
+    return pos.x >= box.x && pos.x <= box.x + box.w && pos.y >= box.y && pos.y <= box.y + box.h;
+}
+
+function findRegionAtPos(pos) {
+    // Check answer columns
+    for (let i = 0; i < answerColumns.length; i++) {
+        if (isInsideBox(pos, answerColumns[i])) return `col_${i + 1}`;
+    }
+    // Check set
+    const setBox = getRegionBox('set_region');
+    if (isInsideBox(pos, setBox)) return 'set_region';
+    // Check id
+    const idBox = getRegionBox('id_grid');
+    if (isInsideBox(pos, idBox)) return 'id_grid';
+    return null;
+}
+
+canvas.addEventListener('mousedown', function(e) {
+    const pos = getCanvasMousePos(e);
+    isMouseDown = true;
+    dragStartX = pos.x;
+    dragStartY = pos.y;
+
+    if (editorMode === 'draw') {
+        dragAction = 'draw';
+        dragOrigBox = { x: pos.x, y: pos.y, w: 0, h: 0 };
+    } else {
+        // Select mode: check if mouse is on a handle of the currently active box
+        const activeBox = getRegionBox(activeRegion);
+        const handle = getHandleUnderMouse(pos, activeBox);
+        if (handle) {
+            dragAction = handle;
+            dragOrigBox = Object.assign({}, activeBox);
+        } else if (isInsideBox(pos, activeBox)) {
+            dragAction = 'move';
+            dragOrigBox = Object.assign({}, activeBox);
+        } else {
+            // Clicked outside active box: see if clicked another region
+            const clickedRegion = findRegionAtPos(pos);
+            if (clickedRegion) {
+                selectRegion(clickedRegion);
+                dragAction = 'move';
+                dragOrigBox = getRegionBox(clickedRegion);
+            } else {
+                dragAction = null;
+            }
+        }
+    }
+});
+
+canvas.addEventListener('mousemove', function(e) {
+    const pos = getCanvasMousePos(e);
+    document.getElementById('canvasMousePosText').innerText = `X: ${pos.x}, Y: ${pos.y}`;
+
+    if (!isMouseDown) {
+        if (editorMode === 'draw') {
+            canvas.style.cursor = 'crosshair';
+        } else {
+            const activeBox = getRegionBox(activeRegion);
+            const handle = getHandleUnderMouse(pos, activeBox);
+            if (handle === 'nw' || handle === 'se') canvas.style.cursor = 'nwse-resize';
+            else if (handle === 'ne' || handle === 'sw') canvas.style.cursor = 'nesw-resize';
+            else if (handle === 'n' || handle === 's') canvas.style.cursor = 'ns-resize';
+            else if (handle === 'w' || handle === 'e') canvas.style.cursor = 'ew-resize';
+            else if (isInsideBox(pos, activeBox)) canvas.style.cursor = 'move';
+            else if (findRegionAtPos(pos)) canvas.style.cursor = 'pointer';
+            else canvas.style.cursor = 'default';
+        }
+        return;
+    }
+
+    const dx = pos.x - dragStartX;
+    const dy = pos.y - dragStartY;
+
+    if (dragAction === 'draw') {
+        const x = Math.min(dragStartX, pos.x);
+        const y = Math.min(dragStartY, pos.y);
+        const w = Math.abs(pos.x - dragStartX);
+        const h = Math.abs(pos.y - dragStartY);
+        setRegionBox(currentDrawTarget, x, y, w, h);
+        redrawCanvas();
+    } else if (dragAction === 'move') {
+        setRegionBox(activeRegion, dragOrigBox.x + dx, dragOrigBox.y + dy, dragOrigBox.w, dragOrigBox.h);
+        redrawCanvas();
+    } else if (dragAction) {
+        // Resize handle
+        let newX = dragOrigBox.x;
+        let newY = dragOrigBox.y;
+        let newW = dragOrigBox.w;
+        let newH = dragOrigBox.h;
+
+        if (dragAction.includes('e')) newW = Math.max(10, dragOrigBox.w + dx);
+        if (dragAction.includes('s')) newH = Math.max(10, dragOrigBox.h + dy);
+        if (dragAction.includes('w')) {
+            newW = Math.max(10, dragOrigBox.w - dx);
+            newX = dragOrigBox.x + (dragOrigBox.w - newW);
+        }
+        if (dragAction.includes('n')) {
+            newH = Math.max(10, dragOrigBox.h - dy);
+            newY = dragOrigBox.y + (dragOrigBox.h - newH);
+        }
+        setRegionBox(activeRegion, newX, newY, newW, newH);
+        redrawCanvas();
+    }
+});
+
+window.addEventListener('mouseup', function() {
+    if (isMouseDown) {
+        isMouseDown = false;
+        if (dragAction === 'draw') {
+            setToolMode('select'); // return to select mode after drawing
+        }
+        dragAction = null;
+        redrawCanvas();
+    }
+});
+
+// ==============================================================================
+// 6. CANVAS RENDERING
+// ==============================================================================
+function redrawCanvas() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw background sheet
+    if (bgImage.complete && bgImage.naturalHeight > 0) {
+        ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
+    } else {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // 1. Draw Roll/ID Grid (Blue)
+    const idBox = getRegionBox('id_grid');
+    const idCols = parseInt(document.getElementById('id_cols').value) || 6;
+    const idRows = parseInt(document.getElementById('id_rows').value) || 10;
+    const isIdActive = (activeRegion === 'id_grid');
+    drawGrid(idBox.x, idBox.y, idBox.w, idBox.h, idRows, idCols, 'rgba(13, 110, 253, 0.20)', '#0d6efd', 'ID Grid', isIdActive);
+
+    // 2. Draw Set Region (Green)
+    const setBox = getRegionBox('set_region');
+    const setRows = parseInt(document.getElementById('set_rows').value) || 4;
+    const setCols = parseInt(document.getElementById('set_cols').value) || 1;
+    const isSetActive = (activeRegion === 'set_region');
+    drawGrid(setBox.x, setBox.y, setBox.w, setBox.h, setRows, setCols, 'rgba(25, 135, 84, 0.20)', '#198754', 'Set (A-D)', isSetActive);
+
+    // 3. Draw Answer Columns (Purple)
+    answerColumns.forEach((col, idx) => {
+        const colNum = idx + 1;
+        const isColActive = (activeRegion === `col_${colNum}`);
+        const qCount = Math.max(1, (parseInt(col.q_end) - parseInt(col.q_start) + 1));
+        const label = `${col.subject ? col.subject + ' ' : ''}(Q${col.q_start}-${col.q_end})`;
+        drawGrid(col.x, col.y, col.w, col.h, qCount, 4, 'rgba(111, 66, 193, 0.15)', '#6f42c1', label, isColActive);
+    });
+
+    // 4. Draw Live Test Bubbles Overlay (if available)
+    if (showBubbleOverlays && testBubbleOverlays.length > 0) {
+        testBubbleOverlays.forEach(b => {
+            ctx.beginPath();
+            ctx.arc(b.cx, b.cy, b.r || 7, 0, Math.PI * 2);
+            ctx.fillStyle = b.color || 'rgba(0, 230, 64, 0.5)';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#00c851';
+            ctx.stroke();
+        });
+    }
+}
+
+function drawGrid(x, y, w, h, rows, cols, fillStyle, strokeStyle, label, isActive) {
+    if (w <= 0 || h <= 0) return;
+
+    // Outer Fill & Border
+    ctx.fillStyle = fillStyle;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = strokeStyle;
+    ctx.lineWidth = isActive ? 3 : 1.5;
+    if (isActive) {
+        ctx.setLineDash([6, 3]);
+    } else {
+        ctx.setLineDash([]);
+    }
+    ctx.strokeRect(x, y, w, h);
+    ctx.setLineDash([]);
+
+    // Label with badge pill
+    ctx.font = 'bold 12px sans-serif';
+    const textW = ctx.measureText(label).width;
+    ctx.fillStyle = strokeStyle;
+    ctx.fillRect(x, Math.max(0, y - 18), textW + 8, 16);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(label, x + 4, Math.max(12, y - 5));
+
+    // Inner horizontal grid lines
+    ctx.strokeStyle = strokeStyle;
+    ctx.lineWidth = 0.5;
+    const rowH = h / rows;
+    for (let r = 1; r < rows; r++) {
+        ctx.beginPath();
+        ctx.moveTo(x, y + r * rowH);
+        ctx.lineTo(x + w, y + r * rowH);
+        ctx.stroke();
+    }
+
+    // Inner vertical grid lines
+    const colW = w / cols;
+    for (let c = 1; c < cols; c++) {
+        ctx.beginPath();
+        ctx.moveTo(x + c * colW, y);
+        ctx.lineTo(x + c * colW, y + h);
+        ctx.stroke();
+    }
+
+    // Draw 8 grab handles if active
+    if (isActive) {
+        drawResizeHandles(x, y, w, h, strokeStyle);
+    }
+}
+
+function drawResizeHandles(x, y, w, h, color) {
+    const hs = 8;
+    const handles = [
+        { x: x, y: y },
+        { x: x + w, y: y },
+        { x: x + w, y: y + h },
+        { x: x, y: y + h },
+        { x: x + w / 2, y: y },
+        { x: x + w / 2, y: y + h },
+        { x: x, y: y + h / 2 },
+        { x: x + w, y: y + h / 2 }
+    ];
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    handles.forEach(pt => {
+        ctx.fillRect(pt.x - hs / 2, pt.y - hs / 2, hs, hs);
+        ctx.strokeRect(pt.x - hs / 2, pt.y - hs / 2, hs, hs);
+    });
+}
+
+function toggleBubbleOverlay(checked) {
+    showBubbleOverlays = checked;
+    redrawCanvas();
+}
+
+function zoomCanvas(scale) {
+    currentScale = Math.max(0.3, Math.min(2.5, scale));
+    canvas.style.transform = `scale(${currentScale})`;
+    canvas.style.transformOrigin = 'top center';
+    document.getElementById('zoomLevelBtn').innerText = `${Math.round(currentScale * 100)}%`;
+}
+
+// ==============================================================================
+// 7. ORIENTATION & PRESETS
+// ==============================================================================
 function switchOrientation(mode) {
     const dimWidthInput = document.getElementById('dim_width');
     const dimHeightInput = document.getElementById('dim_height');
@@ -421,10 +1329,169 @@ function applyCanvasDimensions() {
             }
         }
     }
-
     redrawCanvas();
 }
 
+function applyPortraitPreset() {
+    if (!confirm('আপনি কি ৪ কলাম ১০০Q পোর্ট্রেট স্ট্যান্ডার্ড প্রিসেট বসাতে চান?')) return;
+    switchOrientation('portrait');
+    setRegionBox('id_grid', 570, 70, 190, 293);
+    setRegionBox('set_region', 516, 70, 34, 129);
+    answerColumns = [
+        { column_index: 1, subject: "কলাম ১", q_start: 1, q_end: 25, x: 78, y: 416, w: 128, h: 690 },
+        { column_index: 2, subject: "কলাম ২", q_start: 26, q_end: 50, x: 264, y: 416, w: 128, h: 690 },
+        { column_index: 3, subject: "কলাম ৩", q_start: 51, q_end: 75, x: 448, y: 416, w: 128, h: 690 },
+        { column_index: 4, subject: "কলাম ৪", q_start: 76, q_end: 100, x: 633, y: 416, w: 128, h: 690 }
+    ];
+    renderAnswerColumnsUI();
+    updateDrawTargetDropdown();
+    redrawCanvas();
+}
+
+function applyLandscapePreset() {
+    if (!confirm('আপনি কি ৪ কলাম ১০০Q ল্যান্ডস্কেপ প্রিসেট বসাতে চান?')) return;
+    switchOrientation('landscape');
+    setRegionBox('id_grid', 80, 50, 180, 260);
+    setRegionBox('set_region', 280, 50, 34, 120);
+    answerColumns = [
+        { column_index: 1, subject: "কলাম ১", q_start: 1, q_end: 25, x: 60, y: 340, w: 220, h: 400 },
+        { column_index: 2, subject: "কলাম ২", q_start: 26, q_end: 50, x: 320, y: 340, w: 220, h: 400 },
+        { column_index: 3, subject: "কলাম ৩", q_start: 51, q_end: 75, x: 580, y: 340, w: 220, h: 400 },
+        { column_index: 4, subject: "কলাম ৪", q_start: 76, q_end: 100, x: 840, y: 340, w: 220, h: 400 }
+    ];
+    renderAnswerColumnsUI();
+    updateDrawTargetDropdown();
+    redrawCanvas();
+}
+
+function apply150QPreset() {
+    if (!confirm('আপনি কি ৩ কলাম ১৫০Q প্রিসেট বসাতে চান?')) return;
+    document.getElementById('dim_width').value = 657;
+    document.getElementById('dim_height').value = 1024;
+    applyCanvasDimensions();
+    setRegionBox('id_grid', 458, 212, 110, 192);
+    setRegionBox('set_region', 585, 214, 34, 142);
+    answerColumns = [
+        { column_index: 1, subject: "ইংরেজি", q_start: 1, q_end: 50, x: 104, y: 204, w: 84, h: 785 },
+        { column_index: 2, subject: "বাংলা", q_start: 51, q_end: 100, x: 238, y: 204, w: 84, h: 785 },
+        { column_index: 3, subject: "সাধারণ জ্ঞান", q_start: 101, q_end: 150, x: 372, y: 204, w: 84, h: 785 }
+    ];
+    renderAnswerColumnsUI();
+    updateDrawTargetDropdown();
+    redrawCanvas();
+}
+
+// ==============================================================================
+// 8. AUTO-DETECT GRID FEATURE
+// ==============================================================================
+async function runAutoDetect() {
+    const alertBox = document.getElementById('sampleUploadAlert');
+    const msgBox = document.getElementById('sampleUploadMessage');
+    alertBox.className = 'alert alert-info py-2 d-flex align-items-center mb-3';
+    alertBox.classList.remove('d-none');
+    msgBox.innerHTML = '<i class="fa fa-spinner fa-spin me-2"></i> নমুনা শিট থেকে স্বয়ংক্রিয়ভাবে গ্রিড শনাক্ত করা হচ্ছে... অনুগ্রহ করে অপেক্ষা করুন।';
+
+    const formData = new FormData();
+    formData.append('template_filename', "{{ current_template_filename }}");
+    formData.append('width', document.getElementById('dim_width').value);
+    formData.append('height', document.getElementById('dim_height').value);
+
+    try {
+        const resp = await fetch("{% url 'dashboard:template_autodetect_ajax' %}", {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: formData
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+            alertBox.classList.add('d-none');
+            lastAutoDetectResult = data;
+
+            let colHtml = '';
+            data.columns.forEach((c, i) => {
+                colHtml += `<li><strong>কলাম ${i+1}:</strong> X=${c.x}, Y=${c.y}, W=${c.w}, H=${c.h}</li>`;
+            });
+
+            const bodyHtml = `
+                <div class="alert alert-success py-2">
+                    <i class="fa fa-check-circle me-1"></i> ${data.message}
+                </div>
+                <div class="small">
+                    <p class="mb-1"><strong>শনাক্তকৃত স্থানাঙ্কসমূহ:</strong></p>
+                    <ul class="mb-2">
+                        ${data.roll ? `<li><strong>রোল গ্রিড:</strong> X=${data.roll.x}, Y=${data.roll.y}, W=${data.roll.w}, H=${data.roll.h}</li>` : ''}
+                        ${data.set ? `<li><strong>সেট বক্স:</strong> X=${data.set.x}, Y=${data.set.y}, W=${data.set.w}, H=${data.set.h}</li>` : ''}
+                        ${colHtml}
+                    </ul>
+                    <p class="text-muted mb-0">প্রয়োগ করার পর প্রয়োজনবোধে ক্যানভাসে হ্যান্ডেল টেনে সামান্য সমন্বয় করে নিতে পারবেন।</p>
+                </div>
+            `;
+            document.getElementById('autodetectModalBody').innerHTML = bodyHtml;
+            const modal = new bootstrap.Modal(document.getElementById('autodetectModal'));
+            modal.show();
+        } else {
+            alertBox.className = 'alert alert-warning py-2 d-flex align-items-center mb-3';
+            msgBox.innerHTML = `<i class="fa fa-exclamation-triangle me-2"></i> ${data.error || 'স্বয়ংক্রিয়ভাবে শনাক্ত করা সম্ভব হয়নি।'}`;
+        }
+    } catch (e) {
+        alertBox.className = 'alert alert-danger py-2 d-flex align-items-center mb-3';
+        msgBox.innerHTML = `<i class="fa fa-times-circle me-2"></i> সার্ভার এরর: ${e.message}`;
+    }
+}
+
+function applyAutoDetectedCoordinates() {
+    if (!lastAutoDetectResult) return;
+    const data = lastAutoDetectResult;
+
+    if (data.dimensions) {
+        document.getElementById('dim_width').value = data.dimensions.width;
+        document.getElementById('dim_height').value = data.dimensions.height;
+        applyCanvasDimensions();
+    }
+
+    if (data.roll) {
+        setRegionBox('id_grid', data.roll.x, data.roll.y, data.roll.w, data.roll.h);
+    }
+    if (data.set) {
+        setRegionBox('set_region', data.set.x, data.set.y, data.set.w, data.set.h);
+    }
+
+    if (data.columns && data.columns.length > 0) {
+        const numCols = data.columns.length;
+        const totalQ = (answerColumns.length > 0 && answerColumns[answerColumns.length - 1].q_end) ? answerColumns[answerColumns.length - 1].q_end : 100;
+        const qPerCol = Math.round(totalQ / numCols);
+
+        answerColumns = [];
+        let currQ = 1;
+        data.columns.forEach((c, i) => {
+            let qStart = currQ;
+            let qEnd = (i === numCols - 1) ? totalQ : (qStart + qPerCol - 1);
+            currQ = qEnd + 1;
+            answerColumns.push({
+                column_index: i + 1,
+                subject: `কলাম ${i + 1}`,
+                q_start: qStart,
+                q_end: qEnd,
+                x: c.x,
+                y: c.y,
+                w: c.w,
+                h: c.h
+            });
+        });
+        renderAnswerColumnsUI();
+        updateDrawTargetDropdown();
+    }
+
+    redrawCanvas();
+    const modalEl = document.getElementById('autodetectModal');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) modal.hide();
+}
+
+// ==============================================================================
+// 9. SAMPLE SHEET ROTATION & UPLOAD
+// ==============================================================================
 async function rotateBgImage() {
     const alertBox = document.getElementById('sampleUploadAlert');
     const msgBox = document.getElementById('sampleUploadMessage');
@@ -447,7 +1514,6 @@ async function rotateBgImage() {
             msgBox.innerHTML = `<i class="fa fa-check-circle me-2"></i> ${data.message} ক্যানভাস হালনাগাদ করা হয়েছে।`;
             bgImage.src = data.sample_url;
 
-            // Auto-swap canvas dimensions if image orientation now matches opposite
             if (data.width && data.height) {
                 const isImgLandscape = data.width > data.height;
                 const isCanvasLandscape = canvas.width > canvas.height;
@@ -461,288 +1527,9 @@ async function rotateBgImage() {
         }
     } catch (err) {
         console.error(err);
-        rotateBgImageClientSide();
-        alertBox.className = 'alert alert-warning py-2 d-flex align-items-center mb-3';
-        msgBox.innerHTML = '<i class="fa fa-info-circle me-2"></i> ব্রাউজারে সাময়িকভাবে নমুনা শিট ৯০° ঘোরানো হয়েছে।';
+        alertBox.className = 'alert alert-danger py-2 d-flex align-items-center mb-3';
+        msgBox.innerHTML = '<i class="fa fa-times-circle me-2"></i> নেটওয়ার্ক বা সার্ভার ত্রুটি।';
     }
-}
-
-function rotateBgImageClientSide() {
-    if (!bgImage.complete || bgImage.naturalWidth === 0) return;
-    const offCanvas = document.createElement('canvas');
-    offCanvas.width = bgImage.naturalHeight;
-    offCanvas.height = bgImage.naturalWidth;
-    const offCtx = offCanvas.getContext('2d');
-    offCtx.translate(offCanvas.width / 2, offCanvas.height / 2);
-    offCtx.rotate((90 * Math.PI) / 180);
-    offCtx.drawImage(bgImage, -bgImage.naturalWidth / 2, -bgImage.naturalHeight / 2);
-    bgImage.src = offCanvas.toDataURL();
-}
-
-function applyLandscapePreset() {
-    if (!confirm('আপনি কি ল্যান্ডস্কেপ শিটের জন্য প্রস্তাবিত আদর্শ গ্রিড পজিশন বসাতে চান? (বর্তমান স্থানাঙ্কগুলো প্রতিস্থাপিত হবে)')) {
-        return;
-    }
-    switchOrientation('landscape');
-
-    document.getElementById('id_x').value = 80;
-    document.getElementById('id_y').value = 50;
-    document.getElementById('id_w').value = 180;
-    document.getElementById('id_h').value = 260;
-
-    document.getElementById('set_x').value = 280;
-    document.getElementById('set_y').value = 50;
-    document.getElementById('set_w').value = 34;
-    document.getElementById('set_h').value = 120;
-
-    document.getElementById('col1_x').value = 60;
-    document.getElementById('col1_y').value = 340;
-    document.getElementById('col1_w').value = 220;
-    document.getElementById('col1_h').value = 400;
-
-    document.getElementById('col2_x').value = 320;
-    document.getElementById('col2_y').value = 340;
-    document.getElementById('col2_w').value = 220;
-    document.getElementById('col2_h').value = 400;
-
-    document.getElementById('col3_x').value = 580;
-    document.getElementById('col3_y').value = 340;
-    document.getElementById('col3_w').value = 220;
-    document.getElementById('col3_h').value = 400;
-
-    document.getElementById('col4_x').value = 840;
-    document.getElementById('col4_y').value = 340;
-    document.getElementById('col4_w').value = 220;
-    document.getElementById('col4_h').value = 400;
-
-    redrawCanvas();
-}
-
-function applyPortraitPreset() {
-    if (!confirm('আপনি কি পোর্ট্রেট শিটের স্ট্যান্ডার্ড গ্রিড পজিশন রিসেট করতে চান?')) {
-        return;
-    }
-    switchOrientation('portrait');
-
-    document.getElementById('id_x').value = 570;
-    document.getElementById('id_y').value = 70;
-    document.getElementById('id_w').value = 190;
-    document.getElementById('id_h').value = 293;
-
-    document.getElementById('set_x').value = 516;
-    document.getElementById('set_y').value = 70;
-    document.getElementById('set_w').value = 34;
-    document.getElementById('set_h').value = 129;
-
-    document.getElementById('col1_x').value = 78;
-    document.getElementById('col1_y').value = 416;
-    document.getElementById('col1_w').value = 128;
-    document.getElementById('col1_h').value = 690;
-
-    document.getElementById('col2_x').value = 264;
-    document.getElementById('col2_y').value = 416;
-    document.getElementById('col2_w').value = 128;
-    document.getElementById('col2_h').value = 690;
-
-    document.getElementById('col3_x').value = 448;
-    document.getElementById('col3_y').value = 416;
-    document.getElementById('col3_w').value = 128;
-    document.getElementById('col3_h').value = 690;
-
-    document.getElementById('col4_x').value = 633;
-    document.getElementById('col4_y').value = 416;
-    document.getElementById('col4_w').value = 128;
-    document.getElementById('col4_h').value = 690;
-
-    redrawCanvas();
-}
-
-bgImage.onload = function() {
-    redrawCanvas();
-};
-
-function zoomCanvas(scale) {
-    currentScale = scale;
-    canvas.style.transform = `scale(${scale})`;
-    canvas.style.transformOrigin = 'top center';
-}
-
-function redrawCanvas() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Draw background sheet
-    if (bgImage.complete && bgImage.naturalHeight > 0) {
-        ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
-    } else {
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
-
-    // 1. Draw Roll/ID Grid (Blue)
-    const idX = parseInt(document.getElementById('id_x').value) || 0;
-    const idY = parseInt(document.getElementById('id_y').value) || 0;
-    const idW = parseInt(document.getElementById('id_w').value) || 0;
-    const idH = parseInt(document.getElementById('id_h').value) || 0;
-    const idCols = parseInt(document.getElementById('id_cols').value) || 6;
-    const idRows = parseInt(document.getElementById('id_rows').value) || 10;
-
-    drawGrid(idX, idY, idW, idH, idRows, idCols, 'rgba(13, 110, 253, 0.25)', '#0d6efd', 'ID Grid');
-
-    // 2. Draw Set Region (Green)
-    const setX = parseInt(document.getElementById('set_x').value) || 0;
-    const setY = parseInt(document.getElementById('set_y').value) || 0;
-    const setW = parseInt(document.getElementById('set_w').value) || 0;
-    const setH = parseInt(document.getElementById('set_h').value) || 0;
-
-    drawGrid(setX, setY, setW, setH, 4, 1, 'rgba(25, 135, 84, 0.25)', '#198754', 'Set (A-D)');
-
-    // 3. Draw Answer Columns (Purple)
-    const colBlocks = document.querySelectorAll('.answer-col-block');
-    colBlocks.forEach((block, idx) => {
-        const xInput = block.querySelector('.col-input-x');
-        const yInput = block.querySelector('.col-input-y');
-        const wInput = block.querySelector('.col-input-w');
-        const hInput = block.querySelector('.col-input-h');
-        const x = xInput ? (parseInt(xInput.value) || 0) : 0;
-        const y = yInput ? (parseInt(yInput.value) || 0) : 0;
-        const w = wInput ? (parseInt(wInput.value) || 0) : 0;
-        const h = hInput ? (parseInt(hInput.value) || 0) : 0;
-
-        const origCol = (templateData.answer_columns && templateData.answer_columns[idx]);
-        const qCount = origCol ? (origCol.q_end - origCol.q_start + 1) : 25;
-        const label = origCol ? `${origCol.subject ? origCol.subject + ' ' : ''}(Q${origCol.q_start}-${origCol.q_end})` : `Col ${idx+1}`;
-
-        drawGrid(x, y, w, h, qCount, 4, 'rgba(111, 66, 193, 0.15)', '#6f42c1', label);
-    });
-}
-
-function drawGrid(x, y, w, h, rows, cols, fillStyle, strokeStyle, label) {
-    if (w <= 0 || h <= 0) return;
-
-    // Outer Fill & Border
-    ctx.fillStyle = fillStyle;
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = strokeStyle;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x, y, w, h);
-
-    // Label
-    ctx.fillStyle = strokeStyle;
-    ctx.font = 'bold 12px sans-serif';
-    ctx.fillText(label, x + 4, y - 4);
-
-    // Inner horizontal grid lines
-    ctx.lineWidth = 0.5;
-    const rowH = h / rows;
-    for (let r = 1; r < rows; r++) {
-        ctx.beginPath();
-        ctx.moveTo(x, y + r * rowH);
-        ctx.lineTo(x + w, y + r * rowH);
-        ctx.stroke();
-    }
-
-    // Inner vertical grid lines
-    const colW = w / cols;
-    for (let c = 1; c < cols; c++) {
-        ctx.beginPath();
-        ctx.moveTo(x + c * colW, y);
-        ctx.lineTo(x + c * colW, y + h);
-        ctx.stroke();
-    }
-}
-
-function collectTemplateJson() {
-    const w = parseInt(document.getElementById('dim_width').value) || 794;
-    const h = parseInt(document.getElementById('dim_height').value) || 1123;
-    const orientation = (w > h) ? 'landscape' : 'portrait';
-
-    const base = Object.assign({}, templateData);
-    base.name = base.name || "{{ current_template_filename }}";
-    base.version = base.version || "1.0";
-    base.orientation = orientation;
-    base.dimensions = { width: w, height: h };
-    base.corner_markers = base.corner_markers || { min_area: 100, max_area: 10000, aspect_tolerance: 0.4 };
-    base.id_grid = {
-        x: parseInt(document.getElementById('id_x').value) || 0,
-        y: parseInt(document.getElementById('id_y').value) || 0,
-        w: parseInt(document.getElementById('id_w').value) || 0,
-        h: parseInt(document.getElementById('id_h').value) || 0,
-        columns: parseInt(document.getElementById('id_cols').value) || 6,
-        rows: parseInt(document.getElementById('id_rows').value) || 10
-    };
-    base.set_region = {
-        x: parseInt(document.getElementById('set_x').value) || 0,
-        y: parseInt(document.getElementById('set_y').value) || 0,
-        w: parseInt(document.getElementById('set_w').value) || 0,
-        h: parseInt(document.getElementById('set_h').value) || 0,
-        rows: (base.set_region && base.set_region.rows) ? base.set_region.rows : 4,
-        columns: (base.set_region && base.set_region.columns) ? base.set_region.columns : 1
-    };
-
-    const answerCols = [];
-    const colBlocks = document.querySelectorAll('.answer-col-block');
-    colBlocks.forEach((block, idx) => {
-        const origCol = (templateData.answer_columns && templateData.answer_columns[idx]) 
-            ? Object.assign({}, templateData.answer_columns[idx]) 
-            : { column_index: idx + 1, q_start: (idx * 25) + 1, q_end: (idx + 1) * 25 };
-        const xInput = block.querySelector('.col-input-x');
-        const yInput = block.querySelector('.col-input-y');
-        const wInput = block.querySelector('.col-input-w');
-        const hInput = block.querySelector('.col-input-h');
-        origCol.x = xInput ? (parseInt(xInput.value) || 0) : 0;
-        origCol.y = yInput ? (parseInt(yInput.value) || 0) : 0;
-        origCol.w = wInput ? (parseInt(wInput.value) || 0) : 0;
-        origCol.h = hInput ? (parseInt(hInput.value) || 0) : 0;
-        answerCols.push(origCol);
-    });
-    base.answer_columns = answerCols;
-    return base;
-}
-
-function switchTemplate(filename) {
-    if (confirm('আপনি কি এই টেমপ্লেটটি লোড করতে চান? অসংরক্ষিত কোনো পরিবর্তন থাকলে তা মুছে যাবে।')) {
-        window.location.href = "{% url 'dashboard:template_editor' %}?template=" + encodeURIComponent(filename);
-    }
-}
-
-function saveTemplateForm() {
-    const json = collectTemplateJson();
-    document.getElementById('formAction').value = 'save';
-    document.getElementById('templateJsonInput').value = JSON.stringify(json, null, 2);
-    document.getElementById('templateForm').submit();
-}
-
-function submitSaveAs() {
-    const newTitle = document.getElementById('saveAsTitle').value.trim();
-    const newFilename = document.getElementById('saveAsFilename').value.trim();
-    if (!newFilename) {
-        alert('অনুগ্রহ করে ফাইলের নাম লিখুন (যেমন: model_test_100q.json)');
-        return;
-    }
-    const json = collectTemplateJson();
-    if (newTitle) {
-        json.name = newTitle;
-    }
-    document.getElementById('formAction').value = 'save_as';
-    document.getElementById('formNewTitle').value = newTitle;
-    document.getElementById('formNewFilename').value = newFilename;
-    document.getElementById('templateJsonInput').value = JSON.stringify(json, null, 2);
-    document.getElementById('templateForm').submit();
-}
-
-function getCookie(name) {
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            const cookie = cookies[i].trim();
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
-            }
-        }
-    }
-    return cookieValue;
 }
 
 async function uploadSampleSheet(input) {
@@ -752,7 +1539,7 @@ async function uploadSampleSheet(input) {
     const msgBox = document.getElementById('sampleUploadMessage');
     alertBox.className = 'alert alert-info py-2 d-flex align-items-center mb-3';
     alertBox.classList.remove('d-none');
-    msgBox.innerHTML = '<i class="fa fa-spinner fa-spin me-2"></i> নমুনা শিট আপলোড হচ্ছে এবং Perspective Correction (Warp) করা হচ্ছে... অনুগ্রহ করে অপেক্ষা করুন।';
+    msgBox.innerHTML = '<i class="fa fa-spinner fa-spin me-2"></i> নমুনা শিট আপলোড হচ্ছে এবং Perspective Correction করা হচ্ছে...';
 
     const formData = new FormData();
     formData.append('sample_image', file);
@@ -769,7 +1556,7 @@ async function uploadSampleSheet(input) {
         const data = await resp.json();
         if (data.success) {
             alertBox.className = 'alert alert-success py-2 d-flex align-items-center mb-3';
-            msgBox.innerHTML = `<i class="fa fa-check-circle me-2"></i> ${data.message} ক্যানভাসে নতুন শিট প্রদর্শিত হচ্ছে। এখন শিটের সাথে বাবলগুলো মিলিয়ে নিন।`;
+            msgBox.innerHTML = `<i class="fa fa-check-circle me-2"></i> ${data.message} এখন গ্রিডের সাথে বাবলগুলো মিলিয়ে নিন বা 'অটো ডিটেক্ট' বাটনে চাপুন।`;
             bgImage.src = data.sample_url;
         } else {
             alertBox.className = 'alert alert-danger py-2 d-flex align-items-center mb-3';
@@ -782,6 +1569,9 @@ async function uploadSampleSheet(input) {
     input.value = '';
 }
 
+// ==============================================================================
+// 10. OMR TEST & LIVE BUBBLE OVERLAYS
+// ==============================================================================
 async function testCoordinates() {
     const json = collectTemplateJson();
     const resultBox = document.getElementById('testResultBox');
@@ -809,15 +1599,84 @@ async function testCoordinates() {
 
             details.innerHTML = `
                 <div class="row g-2 mb-2">
-                    <div class="col-6"><strong>শনাক্ত রোল:</strong> <span class="badge bg-primary font-monospace">${data.student_numeric_id || 'শনাক্ত হয়নি'}</span></div>
-                    <div class="col-6"><strong>শনাক্ত সেট:</strong> <span class="badge bg-success">${data.exam_set || 'শনাক্ত হয়নি'}</span></div>
+                    <div class="col-6"><strong>শনাক্ত রোল:</strong> <span class="badge bg-primary font-monospace fs-6">${data.student_numeric_id || 'শনাক্ত হয়নি'}</span></div>
+                    <div class="col-6"><strong>শনাক্ত সেট:</strong> <span class="badge bg-success fs-6">${data.exam_set || 'শনাক্ত হয়নি'}</span></div>
                 </div>
-                <div class="mb-2"><strong>মোট উত্তর দেওয়া প্রশ্ন:</strong> ${data.answered_count} / ${data.total_questions} টি</div>
+                <div class="mb-2"><strong>মোট উত্তর দেওয়া প্রশ্ন:</strong> <span class="fw-bold text-success">${data.answered_count}</span> / ${data.total_questions} টি</div>
                 <div><strong>নমুনা উত্তর (Q1-Q15):</strong><br>${sampleAnswersHtml}</div>
             `;
             resultBox.className = 'alert alert-success py-3';
+
+            // BUILD LIVE VISUAL BUBBLE HIGHLIGHTS OVERLAY
+            testBubbleOverlays = [];
+            if (data.all_answers) {
+                const optLetters = ['A', 'B', 'C', 'D'];
+                answerColumns.forEach(col => {
+                    const qStart = parseInt(col.q_start);
+                    const qEnd = parseInt(col.q_end);
+                    const numQ = qEnd - qStart + 1;
+                    const cellH = col.h / numQ;
+                    const cellW = col.w / 4;
+
+                    for (let q = qStart; q <= qEnd; q++) {
+                        const ans = data.all_answers[String(q)];
+                        if (ans && optLetters.includes(ans)) {
+                            const optIdx = optLetters.indexOf(ans);
+                            const row = q - qStart;
+                            const cx = col.x + (optIdx + 0.5) * cellW;
+                            const cy = col.y + (row + 0.5) * cellH;
+                            testBubbleOverlays.push({
+                                cx: cx,
+                                cy: cy,
+                                r: Math.min(cellW, cellH) * 0.42,
+                                color: 'rgba(0, 230, 64, 0.45)'
+                            });
+                        }
+                    }
+                });
+            }
+
+            // ID Grid Bubbles Highlight
+            if (data.student_numeric_id) {
+                const idBox = getRegionBox('id_grid');
+                const idCols = parseInt(document.getElementById('id_cols').value) || 6;
+                const idRows = parseInt(document.getElementById('id_rows').value) || 10;
+                const cellW = idBox.w / idCols;
+                const cellH = idBox.h / idRows;
+                for (let c = 0; c < Math.min(idCols, data.student_numeric_id.length); c++) {
+                    const digit = parseInt(data.student_numeric_id[c]);
+                    if (!isNaN(digit) && digit >= 0 && digit < idRows) {
+                        testBubbleOverlays.push({
+                            cx: idBox.x + (c + 0.5) * cellW,
+                            cy: idBox.y + (digit + 0.5) * cellH,
+                            r: Math.min(cellW, cellH) * 0.42,
+                            color: 'rgba(13, 110, 253, 0.45)'
+                        });
+                    }
+                }
+            }
+
+            // Set Bubble Highlight
+            if (data.exam_set) {
+                const setBox = getRegionBox('set_region');
+                const setRows = parseInt(document.getElementById('set_rows').value) || 4;
+                const setMap = { 'A': 0, 'B': 1, 'C': 2, 'D': 3 };
+                const row = setMap[data.exam_set.toUpperCase()];
+                if (row !== undefined && row < setRows) {
+                    const cellH = setBox.h / setRows;
+                    testBubbleOverlays.push({
+                        cx: setBox.x + setBox.w * 0.5,
+                        cy: setBox.y + (row + 0.5) * cellH,
+                        r: Math.min(setBox.w, cellH) * 0.42,
+                        color: 'rgba(25, 135, 84, 0.45)'
+                    });
+                }
+            }
+
+            redrawCanvas();
+
         } else {
-            details.innerHTML = `<span class="text-danger">ত্রুটি: ${data.error || 'OMR processing failed'}</span>`;
+            details.innerHTML = `<span class="text-danger fw-bold"><i class="fa fa-times-circle me-1"></i> ত্রুটি: ${data.error || 'OMR প্রসেসিং ব্যর্থ হয়েছে'}</span>`;
             resultBox.className = 'alert alert-danger py-3';
         }
     } catch (err) {
@@ -825,36 +1684,130 @@ async function testCoordinates() {
         resultBox.className = 'alert alert-danger py-3';
     }
 }
-</script>
 
-<!-- SAVE AS MODAL -->
-<div class="modal fade" id="saveAsModal" tabindex="-1" aria-labelledby="saveAsModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title fw-bold" id="saveAsModalLabel">
-                    <i class="fa fa-copy text-primary me-2"></i>নতুন টেমপ্লেট হিসেবে সেভ করুন (Save As)
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <label for="saveAsTitle" class="form-label fw-bold">টেমপ্লেটের নাম / টাইটেল</label>
-                    <input type="text" class="form-control" id="saveAsTitle" placeholder="যেমন: Model Test 100Q Template" value="{{ template_data.name|default:'' }} (Copy)">
-                </div>
-                <div class="mb-3">
-                    <label for="saveAsFilename" class="form-label fw-bold">ফাইলের নাম (.json)</label>
-                    <input type="text" class="form-control" id="saveAsFilename" placeholder="যেমন: custom_exam_100q.json">
-                    <div class="form-text">ইংরেজি অক্ষর ও আন্ডারস্কোর ব্যবহার করুন। যেমন: <code>custom_exam_100q.json</code></div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">বাতিল</button>
-                <button type="button" class="btn btn-primary fw-bold" onclick="submitSaveAs()">
-                    <i class="fa fa-check me-1"></i> নতুন টেমপ্লেট তৈরি ও সংরক্ষণ করুন
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
+// ==============================================================================
+// 11. SAVING & JSON COLLECTION
+// ==============================================================================
+function collectTemplateJson() {
+    const w = parseInt(document.getElementById('dim_width').value) || 794;
+    const h = parseInt(document.getElementById('dim_height').value) || 1123;
+    const orientation = (w > h) ? 'landscape' : 'portrait';
+
+    const base = Object.assign({}, templateData);
+    base.name = base.name || "{{ current_template_filename }}";
+    base.version = base.version || "1.0";
+    base.orientation = orientation;
+    base.dimensions = { width: w, height: h };
+    base.corner_markers = base.corner_markers || { min_area: 100, max_area: 10000, aspect_tolerance: 0.4 };
+
+    const idBox = getRegionBox('id_grid');
+    base.id_grid = {
+        x: idBox.x,
+        y: idBox.y,
+        w: idBox.w,
+        h: idBox.h,
+        columns: parseInt(document.getElementById('id_cols').value) || 6,
+        rows: parseInt(document.getElementById('id_rows').value) || 10
+    };
+
+    const setBox = getRegionBox('set_region');
+    base.set_region = {
+        x: setBox.x,
+        y: setBox.y,
+        w: setBox.w,
+        h: setBox.h,
+        rows: parseInt(document.getElementById('set_rows').value) || 4,
+        columns: parseInt(document.getElementById('set_cols').value) || 1
+    };
+
+    base.answer_columns = answerColumns.map((col, idx) => ({
+        column_index: idx + 1,
+        subject: col.subject || `কলাম ${idx + 1}`,
+        q_start: parseInt(col.q_start) || 1,
+        q_end: parseInt(col.q_end) || 25,
+        x: col.x,
+        y: col.y,
+        w: col.w,
+        h: col.h
+    }));
+
+    return base;
+}
+
+function switchTemplate(filename) {
+    if (confirm('আপনি কি এই টেমপ্লেটটি লোড করতে চান?')) {
+        window.location.href = "{% url 'dashboard:template_editor' %}?template=" + encodeURIComponent(filename);
+    }
+}
+
+function saveTemplateForm() {
+    const json = collectTemplateJson();
+    document.getElementById('formAction').value = 'save';
+    document.getElementById('templateJsonInput').value = JSON.stringify(json, null, 2);
+    document.getElementById('templateForm').submit();
+}
+
+function submitSaveAs() {
+    const newTitle = document.getElementById('saveAsTitle').value.trim();
+    const newFilename = document.getElementById('saveAsFilename').value.trim();
+    if (!newFilename) {
+        alert('অনুগ্রহ করে ফাইলের নাম লিখুন (যেমন: custom_100q.json)');
+        return;
+    }
+    const json = collectTemplateJson();
+    if (newTitle) json.name = newTitle;
+    document.getElementById('formAction').value = 'save_as';
+    document.getElementById('formNewTitle').value = newTitle;
+    document.getElementById('formNewFilename').value = newFilename;
+    document.getElementById('templateJsonInput').value = JSON.stringify(json, null, 2);
+    document.getElementById('templateForm').submit();
+}
+
+async function confirmDeleteTemplate() {
+    if (!confirm('আপনি কি নিশ্চিত যে এই টেমপ্লেটটি স্থায়ীভাবে মুছে ফেলতে চান?')) return;
+    const formData = new FormData();
+    formData.append('template_filename', "{{ current_template_filename }}");
+    try {
+        const resp = await fetch("{% url 'dashboard:template_delete_ajax' %}", {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: formData
+        });
+        const data = await resp.json();
+        if (data.success) {
+            alert(data.message);
+            window.location.href = "{% url 'dashboard:template_editor' %}";
+        } else {
+            alert('মুছতে ব্যর্থ: ' + (data.error || 'অজানা ত্রুটি'));
+        }
+    } catch (e) {
+        alert('সার্ভার ত্রুটি: ' + e.message);
+    }
+}
+
+function onWizardOrientationChange(val) {
+    if (val === 'landscape') {
+        document.getElementById('wizardWidth').value = 1123;
+        document.getElementById('wizardHeight').value = 794;
+    } else {
+        document.getElementById('wizardWidth').value = 794;
+        document.getElementById('wizardHeight').value = 1123;
+    }
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
 {% endblock %}
