@@ -65,6 +65,26 @@ def read_id_number(warped_image, template, padding=2):
         filled_idx = get_filled_index(col_bubbles)
 
         if filled_idx is None:
+            # Fallback for ID columns: students always fill 1 bubble per column
+            # Recover faint or lightly shaded marks
+            try:
+                import numpy as np
+                from .bubble_detector import _get_bubble_metrics
+                ratios = []
+                centers = []
+                for roi in col_bubbles:
+                    r, c = _get_bubble_metrics(roi)
+                    ratios.append(r)
+                    centers.append(c)
+                darkest_center_idx = int(np.argmin(centers))
+                highest_ratio_idx = int(np.argmax(ratios))
+                if ratios[highest_ratio_idx] >= 0.07 or centers[darkest_center_idx] < 165:
+                    filled_idx = highest_ratio_idx if ratios[highest_ratio_idx] >= 0.09 else darkest_center_idx
+                    logger.info(f"ID digit position {col + 1}: recovered faint mark as {filled_idx}")
+            except Exception as e:
+                logger.debug(f"Soft fallback error: {e}")
+
+        if filled_idx is None:
             logger.warning(f"ID digit position {col + 1}: No bubble filled")
             digits.append('?')
         else:
@@ -116,6 +136,21 @@ def read_id_with_debug(warped_image, template):
         all_ratios.append(ratios)
 
         filled_idx = get_filled_index(col_bubbles)
+        if filled_idx is None:
+            try:
+                import numpy as np
+                from .bubble_detector import _get_bubble_metrics
+                r_list, c_list = [], []
+                for roi in col_bubbles:
+                    r, c = _get_bubble_metrics(roi)
+                    r_list.append(r)
+                    c_list.append(c)
+                darkest_c = int(np.argmin(c_list))
+                highest_r = int(np.argmax(r_list))
+                if r_list[highest_r] >= 0.07 or c_list[darkest_c] < 165:
+                    filled_idx = highest_r if r_list[highest_r] >= 0.09 else darkest_c
+            except Exception:
+                pass
         digits.append(str(filled_idx) if filled_idx is not None else '?')
 
     id_string = ''.join(digits)

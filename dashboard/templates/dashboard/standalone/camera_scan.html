@@ -9,7 +9,7 @@
         background-color: #000;
         border-radius: 10px;
         overflow: hidden;
-        min-height: 480px;
+        min-height: 380px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -18,7 +18,7 @@
     #cameraVideo {
         width: 100%;
         height: auto;
-        max-height: 70vh;
+        max-height: 60vh;
         object-fit: contain;
     }
     /* Translucent A4 Target Alignment Overlay */
@@ -31,17 +31,34 @@
         justify-content: center;
     }
     .sheet-guide-box {
-        width: 65%;
-        height: 90%;
-        border: 2px dashed rgba(255, 255, 255, 0.6);
-        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4);
+        border: 2px dashed rgba(255, 255, 255, 0.75);
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
         position: relative;
         border-radius: 6px;
-        transition: border-color 0.2s ease;
+        transition: all 0.25s ease;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        align-items: center;
+        padding-bottom: 8px;
+    }
+    /* Portrait A4 / A5 Aspect Ratio (1 : 1.414) */
+    .guide-portrait {
+        aspect-ratio: 210 / 297;
+        height: 88%;
+        width: auto;
+        max-width: 90%;
+    }
+    /* Landscape A4 / A5 Aspect Ratio (1.414 : 1) */
+    .guide-landscape {
+        aspect-ratio: 297 / 210;
+        width: 88%;
+        height: auto;
+        max-height: 88%;
     }
     .sheet-guide-box.scanning {
         border-color: #00e676;
-        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6), 0 0 25px rgba(0, 230, 118, 0.6);
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6), 0 0 25px rgba(0, 230, 118, 0.7);
     }
     .corner-bracket {
         position: absolute;
@@ -73,6 +90,27 @@
     @keyframes flashAnim {
         0% { opacity: 0.8; background: #fff; }
         100% { opacity: 0; }
+    }
+
+    /* Mobile Phone Screen Optimizations */
+    @media (max-width: 768px) {
+        .camera-container {
+            min-height: 250px !important;
+            max-height: 45vh !important;
+        }
+        #cameraVideo {
+            max-height: 45vh !important;
+        }
+        .mobile-floating-capture {
+            display: block !important;
+            position: fixed;
+            bottom: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1040;
+            width: 92%;
+            max-width: 400px;
+        }
     }
 </style>
 {% endblock %}
@@ -124,16 +162,29 @@
                 <!-- Camera Select Dropdown -->
                 <div class="d-flex align-items-center gap-1">
                     <span class="small fw-bold text-muted"><i class="fa fa-video text-primary me-1"></i>ক্যামেরা:</span>
-                    <select class="form-select form-select-sm" id="cameraSelect" style="min-width: 180px;" onchange="switchCamera(this.value)">
+                    <select class="form-select form-select-sm" id="cameraSelect" style="min-width: 150px;" onchange="switchCamera(this.value)">
                         <option value="">ক্যামেরা লোড হচ্ছে...</option>
                     </select>
+                </div>
+
+                <!-- Sheet Orientation Switcher (A4/A5 Portrait vs Landscape) -->
+                <div class="d-flex align-items-center gap-1">
+                    <span class="small fw-bold text-muted"><i class="fa fa-compass text-secondary me-1"></i>ওরিয়েন্টেশন:</span>
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Sheet Orientation">
+                        <button type="button" class="btn btn-outline-primary fw-bold {% if default_orientation != 'landscape' %}active{% endif %}" id="btnOrientationPortrait" onclick="switchOrientation('portrait')" title="লম্বালম্বি ওএমআর শিট (A4/A5 Portrait)">
+                            <i class="fa fa-file-alt me-1"></i> পোর্ট্রেট
+                        </button>
+                        <button type="button" class="btn btn-outline-primary fw-bold {% if default_orientation == 'landscape' %}active{% endif %}" id="btnOrientationLandscape" onclick="switchOrientation('landscape')" title="আড়াআড়ি ওএমআর শিট (A4/A5 Landscape)">
+                            <i class="fa fa-file-image me-1"></i> ল্যান্ডস্কেপ
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Auto-Scan Toggle -->
                 <div class="form-check form-switch m-0" title="অটো স্ক্যান সক্রিয় থাকলে প্রতি ৩ সেকেন্ড পর পর ক্যামেরা ফ্রেম স্বয়ংক্রিয়ভাবে স্ক্যান করবে">
                     <input class="form-check-input" type="checkbox" id="autoScanSwitch" onchange="toggleAutoScan(this.checked)">
                     <label class="form-check-label small fw-bold" for="autoScanSwitch">
-                        <i class="fa fa-bolt text-warning me-1"></i>অটো-ক্যাপচার মোড
+                        <i class="fa fa-bolt text-warning me-1"></i>অটো-ক্যাপচার
                     </label>
                 </div>
             </div>
@@ -145,7 +196,7 @@
 
                 <!-- Viewfinder Guide Box -->
                 <div class="viewfinder-overlay">
-                    <div class="sheet-guide-box" id="guideBox">
+                    <div class="sheet-guide-box {% if default_orientation == 'landscape' %}guide-landscape{% else %}guide-portrait{% endif %}" id="guideBox">
                         <div class="corner-bracket tl"></div>
                         <div class="corner-bracket tr"></div>
                         <div class="corner-bracket bl"></div>
@@ -168,9 +219,16 @@
                     <i class="fa fa-camera-retro fa-lg me-2"></i> স্ক্যান ও মূল্যায়ন করুন <span class="small opacity-75 ms-1">(Spacebar)</span>
                 </button>
                 <div class="text-muted small mt-2">
-                    <i class="fa fa-info-circle me-1"></i> ক্যামেরা দিয়ে শিটের ৪টি কোণার কালো মার্কার স্পষ্ট দেখা গেলে স্পেসবার বা বাটনে চাপুন। উল্টো শিট হলেও স্বয়ংক্রিয়ভাবে সোজা হবে।
+                    <i class="fa fa-info-circle me-1"></i> ক্যামেরা দিয়ে শিটের ৪টি কোণার কালো মার্কার ফ্রেমের মাঝে রেখে বাটনে চাপুন।
                 </div>
             </div>
+        </div>
+
+        <!-- Mobile Floating Sticky Capture Button -->
+        <div class="mobile-floating-capture d-block d-md-none text-center">
+            <button type="button" class="btn btn-success btn-lg w-100 py-3 fw-bold shadow-lg rounded-pill" id="btnFloatingCapture" onclick="captureAndScan()">
+                <i class="fa fa-camera-retro me-2"></i> স্ক্যান ও মূল্যায়ন করুন
+            </button>
         </div>
     </div>
 
@@ -345,6 +403,29 @@ const guideBox = document.getElementById('guideBox');
 const statusBadge = document.getElementById('cameraStatusBadge');
 const btnCapture = document.getElementById('btnCapture');
 
+let currentOrientation = '{{ default_orientation|default:"portrait" }}';
+
+function switchOrientation(mode) {
+    currentOrientation = mode;
+    const btnPortrait = document.getElementById('btnOrientationPortrait');
+    const btnLandscape = document.getElementById('btnOrientationLandscape');
+    const guide = document.getElementById('guideBox');
+
+    if (!guide) return;
+
+    if (mode === 'landscape') {
+        if (btnLandscape) btnLandscape.classList.add('active');
+        if (btnPortrait) btnPortrait.classList.remove('active');
+        guide.classList.remove('guide-portrait');
+        guide.classList.add('guide-landscape');
+    } else {
+        if (btnPortrait) btnPortrait.classList.add('active');
+        if (btnLandscape) btnLandscape.classList.remove('active');
+        guide.classList.remove('guide-landscape');
+        guide.classList.add('guide-portrait');
+    }
+}
+
 // Web Audio API Synthesizer for instant scanner beep (no external file required)
 const AudioContext = window.AudioContext || window.webkitAudioContext;
 let audioCtx = null;
@@ -510,17 +591,60 @@ async function captureAndScan() {
     guideBox.classList.add('scanning');
     statusBadge.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> শিট স্ক্যান ও মূল্যায়ন হচ্ছে...';
     btnCapture.disabled = true;
+    const btnFloating = document.getElementById('btnFloatingCapture');
+    if (btnFloating) btnFloating.disabled = true;
 
     // Visual camera shutter flash
     const flash = document.getElementById('flashEffect');
     flash.className = 'position-absolute w-100 h-100 capture-flash';
     setTimeout(() => { flash.className = 'position-absolute w-100 h-100 pointer-events-none'; }, 300);
 
-    // Draw video frame to hidden canvas
-    canvas.width = video.videoWidth || 1280;
-    canvas.height = video.videoHeight || 720;
+    // Calculate crop rectangle based on guide box with 10% safety margin
+    const vw = video.videoWidth || 1280;
+    const vh = video.videoHeight || 720;
+    let cropX = 0, cropY = 0, cropW = vw, cropH = vh;
+
+    try {
+        const vRect = video.getBoundingClientRect();
+        const gRect = guideBox.getBoundingClientRect();
+        if (vRect.width > 50 && vRect.height > 50 && gRect.width > 50 && gRect.height > 50) {
+            let relX = gRect.left - vRect.left;
+            let relY = gRect.top - vRect.top;
+            let relW = gRect.width;
+            let relH = gRect.height;
+
+            // Expand 10% safety padding so corner markers are never clipped
+            const padX = relW * 0.10;
+            const padY = relH * 0.10;
+            relX = Math.max(0, relX - padX);
+            relY = Math.max(0, relY - padY);
+            relW = Math.min(vRect.width - relX, relW + padX * 2);
+            relH = Math.min(vRect.height - relY, relH + padY * 2);
+
+            // Scale to native video stream resolution
+            const scaleX = vw / vRect.width;
+            const scaleY = vh / vRect.height;
+            const targetX = Math.round(relX * scaleX);
+            const targetY = Math.round(relY * scaleY);
+            const targetW = Math.round(relW * scaleX);
+            const targetH = Math.round(relH * scaleY);
+
+            if (targetW > 250 && targetH > 250 && targetX >= 0 && targetY >= 0 && (targetX + targetW) <= vw && (targetY + targetH) <= vh) {
+                cropX = targetX;
+                cropY = targetY;
+                cropW = targetW;
+                cropH = targetH;
+            }
+        }
+    } catch (e) {
+        console.warn('Viewfinder crop computation fallback to full frame:', e);
+    }
+
+    // Draw video frame to hidden canvas (cropped to guide box with margin)
+    canvas.width = cropW;
+    canvas.height = cropH;
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
     // Convert to Base64 JPEG
     const base64Data = canvas.toDataURL('image/jpeg', 0.92);
@@ -570,6 +694,7 @@ async function captureAndScan() {
             isScanning = false;
             guideBox.classList.remove('scanning');
             btnCapture.disabled = false;
+            if (btnFloating) btnFloating.disabled = false;
             if (!autoScanEnabled) {
                 statusBadge.innerHTML = '<i class="fa fa-circle text-success me-1"></i> পরবর্তী শিট ধরুন';
             }

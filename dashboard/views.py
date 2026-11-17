@@ -1681,10 +1681,18 @@ def standalone_camera_scan_view(request, exam_id):
 
     recent_results = exam.results.order_by('-created_at')[:10]
 
+    dims = tpl_data.get('dimensions', {})
+    t_width = int(dims.get('width', 794))
+    t_height = int(dims.get('height', 1123))
+    default_orientation = tpl_data.get('orientation') or ('landscape' if t_width > t_height else 'portrait')
+
     return render(request, 'dashboard/standalone/camera_scan.html', {
         'exam': exam,
         'template_name': exam.template_name,
         'template_data': tpl_data,
+        'default_orientation': default_orientation,
+        'template_width': t_width,
+        'template_height': t_height,
         'sets_configured': sets_configured,
         'recent_results': recent_results,
     })
