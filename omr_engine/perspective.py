@@ -141,7 +141,8 @@ def _select_best_corners(candidates, image_shape):
 def _find_sheet_outer_contour(gray, img_area):
     """
     ব্যাকগ্রাউন্ডের বিপরীতে কাগজের শিটের আয়তাকার বাউন্ডারি (Paper Contour) শনাক্ত করে।
-    মোবাইল ক্যামেরার ছবি, টেবিল বা ডেস্কের পটভূমি থেকে সাদা কাগজের ৪টি কোণা নির্ভুলভাবে বের করে।
+    মোবাইল ক্যামেরার ছবি, টেবিল বা ডেস্কের পটভূমি থেকে বিভিন্ন কৌণিক অ্যাঙ্গেলেও
+    সাদা কাগজের ৪টি কোণা নির্ভুলভাবে বের করে।
     """
     h, w = gray.shape[:2]
     smooth = cv2.bilateralFilter(gray, 9, 75, 75)
@@ -158,10 +159,10 @@ def _find_sheet_outer_contour(gray, img_area):
         
         for c in cnts:
             area = cv2.contourArea(c)
-            if area < img_area * 0.25 or area > img_area * 0.98:
+            if area < img_area * 0.20 or area > img_area * 0.98:
                 continue
             peri = cv2.arcLength(c, True)
-            for eps in [0.02, 0.03, 0.04, 0.05]:
+            for eps in [0.02, 0.03, 0.04, 0.05, 0.07]:
                 approx = cv2.approxPolyDP(c, eps * peri, True)
                 if len(approx) == 4 and cv2.isContourConvex(approx):
                     if area > best_area:
@@ -171,7 +172,7 @@ def _find_sheet_outer_contour(gray, img_area):
     if best_quad:
         return best_quad
 
-    # 2. Canny edge fallback
+    # 2. Canny edge fallback with minAreaRect for angled sheets
     for canny_low, canny_high in [(30, 100), (20, 80), (50, 150)]:
         edges = cv2.Canny(smooth, canny_low, canny_high)
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
@@ -179,37 +180,52 @@ def _find_sheet_outer_contour(gray, img_area):
         cnts, _ = cv2.findContours(dilated, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
         for c in cnts:
             area = cv2.contourArea(c)
-            if area < img_area * 0.25 or area > img_area * 0.98:
+            if area < img_area * 0.20 or area > img_area * 0.98:
                 continue
             peri = cv2.arcLength(c, True)
-            for eps in [0.02, 0.03, 0.04, 0.05]:
+            for eps in [0.02, 0.03, 0.04, 0.05, 0.07]:
                 approx = cv2.approxPolyDP(c, eps * peri, True)
                 if len(approx) == 4 and cv2.isContourConvex(approx):
                     if area > best_area:
                         best_area = area
                         best_quad = [tuple(int(v) for v in p[0]) for p in approx]
 
+            # If contour has > 4 vertices due to perspective angle or slight curve, use minAreaRect
+            if best_quad is None and area > img_area * 0.30:
+                rect = cv2.minAreaRect(c)
+                box = cv2.boxPoints(rect)
+                box = np.int32(box)
+                box_area = cv2.contourArea(box)
+                if box_area > best_area:
+                    best_area = box_area
+                    best_quad = [tuple(int(v) for v in p) for p in box]
+
     return best_quad
 
 
 def _sort_corners(corners):
     """
-    ৪টি corner কে TL, TR, BL, BR ক্রমে সাজাও।
-
-    Args:
-        corners (list): 4টি (x, y) points
-
-    Returns:
-        list: [TL, TR, BL, BR] ক্রমে sorted corners
+    ৪টি corner কে [TL, TR, BL, BR] ক্রমে নিখুঁতভাবে সাজাও।
+    যেকোনো কৌণিক বা তির্যক পার্সপেক্টিভ অ্যাঙ্গেলেও (Homography Sum-Difference Ordering)
+    যাতে কোণাগুলো ভুল ক্রমে ম্যাপ না হয়।
     """
-    # Y অনুযায়ী sort করে top 2 এবং bottom 2 আলাদা করো
-    corners_sorted_y = sorted(corners, key=lambda p: p[1])
-    top = sorted(corners_sorted_y[:2], key=lambda p: p[0])      # X অনুযায়ী → TL, TR
-    bottom = sorted(corners_sorted_y[-2:], key=lambda p: p[0])  # X অনুযায়ী → BL, BR
+    pts = np.array(corners, dtype="float32")
+    rect = np.zeros((4, 2), dtype="float32")
 
-    tl, tr = top
-    bl, br = bottom
-    return [tl, tr, bl, br]
+    # TL এর (x + y) সর্বনিম্ন, BR এর (x + y) সর্বোচ্চ
+    s = pts.sum(axis=1)
+    rect[0] = pts[np.argmin(s)]  # TL
+    rect[3] = pts[np.argmax(s)]  # BR (bl, br convention)
+
+    # TR এর (y - x) সবচেয়ে কম (নেগেটিভ), BL এর (y - x) সবচেয়ে বেশি
+    diff = np.diff(pts, axis=1)  # y - x
+    rect[1] = pts[np.argmin(diff)]  # TR
+    rect[2] = pts[np.argmax(diff)]  # BL
+
+    tl, tr = rect[0], rect[1]
+    bl, br = rect[2], rect[3]
+    return [tuple(int(v) for v in tl), tuple(int(v) for v in tr),
+            tuple(int(v) for v in bl), tuple(int(v) for v in br)]
 
 
 def warp_sheet(image, corners, output_size=(794, 1123)):
