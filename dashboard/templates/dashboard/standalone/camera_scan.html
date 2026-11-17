@@ -201,8 +201,8 @@
                         <div class="corner-bracket tr"></div>
                         <div class="corner-bracket bl"></div>
                         <div class="corner-bracket br"></div>
-                        <div class="text-center text-white small opacity-75 mt-2" style="text-shadow: 0 1px 3px rgba(0,0,0,0.8);">
-                            শিটটি এই ফ্রেমের মাঝে রাখুন
+                        <div class="text-center text-white small fw-bold opacity-90 mt-2" style="text-shadow: 0 1px 3px rgba(0,0,0,0.8);">
+                            পুরো ওএমআর শিটটি এই ফ্রেমের মাঝে রাখুন (চারপাশ দৃশ্যমান রাখুন)
                         </div>
                     </div>
                 </div>
@@ -599,55 +599,14 @@ async function captureAndScan() {
     flash.className = 'position-absolute w-100 h-100 capture-flash';
     setTimeout(() => { flash.className = 'position-absolute w-100 h-100 pointer-events-none'; }, 300);
 
-    // Calculate crop rectangle based on guide box with 10% safety margin
-    const vw = video.videoWidth || 1280;
-    const vh = video.videoHeight || 720;
-    let cropX = 0, cropY = 0, cropW = vw, cropH = vh;
-
-    try {
-        const vRect = video.getBoundingClientRect();
-        const gRect = guideBox.getBoundingClientRect();
-        if (vRect.width > 50 && vRect.height > 50 && gRect.width > 50 && gRect.height > 50) {
-            let relX = gRect.left - vRect.left;
-            let relY = gRect.top - vRect.top;
-            let relW = gRect.width;
-            let relH = gRect.height;
-
-            // Expand 10% safety padding so corner markers are never clipped
-            const padX = relW * 0.10;
-            const padY = relH * 0.10;
-            relX = Math.max(0, relX - padX);
-            relY = Math.max(0, relY - padY);
-            relW = Math.min(vRect.width - relX, relW + padX * 2);
-            relH = Math.min(vRect.height - relY, relH + padY * 2);
-
-            // Scale to native video stream resolution
-            const scaleX = vw / vRect.width;
-            const scaleY = vh / vRect.height;
-            const targetX = Math.round(relX * scaleX);
-            const targetY = Math.round(relY * scaleY);
-            const targetW = Math.round(relW * scaleX);
-            const targetH = Math.round(relH * scaleY);
-
-            if (targetW > 250 && targetH > 250 && targetX >= 0 && targetY >= 0 && (targetX + targetW) <= vw && (targetY + targetH) <= vh) {
-                cropX = targetX;
-                cropY = targetY;
-                cropW = targetW;
-                cropH = targetH;
-            }
-        }
-    } catch (e) {
-        console.warn('Viewfinder crop computation fallback to full frame:', e);
-    }
-
-    // Draw video frame to hidden canvas (cropped to guide box with margin)
-    canvas.width = cropW;
-    canvas.height = cropH;
+    // Capture the 100% full frame directly from camera (never cropped, preserves all margins & resolution)
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     // Convert to Base64 JPEG
-    const base64Data = canvas.toDataURL('image/jpeg', 0.92);
+    const base64Data = canvas.toDataURL('image/jpeg', 0.95);
 
     const formData = new FormData();
     formData.append('image_data', base64Data);

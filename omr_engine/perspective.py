@@ -17,24 +17,17 @@ logger = logging.getLogger(__name__)
 
 def find_corner_markers(image, min_area=None, max_area=None, aspect_tolerance=0.45):
     """
-    OMR শিটের ৪টি কোণার কালো ■ চিহ্ন খুঁজে বের করো।
-
-    Algorithm:
-    1. Grayscale + Multi-thresholding (Otsu + dynamic scale) দিয়ে dark squares খোঁজো
-    2. Dynamic area scaling (ইমেজের মোট রেজোলিউশনের সাথে স্কেল করা)
-    3. ৪টি কোণার সবচেয়ে উপযুক্ত চতুর্ভুজ (Quad) নির্বাচন করো
-    4. ফলব্যাক: শিটের ৪-কোণা বাউন্ডারি কনট্যুর (যদি কোণার মার্কার অস্পষ্ট থাকে)
-    5. TL, TR, BL, BR অনুযায়ী sort করো
-
-    Args:
-        image (np.ndarray): BGR image (OpenCV format)
-        min_area (int | None): কোণার চিহ্নের সর্বনিম্ন area (None হলে স্বয়ংক্রিয় স্কেল হবে)
-        max_area (int | None): কোণার চিহ্নের সর্বোচ্চ area (None হলে স্বয়ংক্রিয় স্কেল হবে)
-        aspect_tolerance (float): Width/Height ratio tolerance (0.45 = perspective tilt সহনশীল)
-
+    OMR শিটের ৪টি কোণা চিহ্নিত করো।
+    
+    ১. যদি শিটে ৪টি কোণার কালো ■ মার্কার থাকে (যেমন DU B-Unit বা স্ট্যান্ডার্ড ওএমআর),
+       তবে ৪টি কোয়ারড্রেন্টে অবস্থিত দূরবর্তী মার্কারগুলো শনাক্ত করে।
+    ২. যদি শিটে কোনো কোণার মার্কার না থাকে (যেমন অ্যাডমিশন চ্যালেঞ্জ ইত্যাদি),
+       তবে ব্যাকগ্রাউন্ডের বিপরীতে কাগজের আয়তাকার বাউন্ডারি (Paper Contour) শনাক্ত করে।
+    ৩. যদি কাগজ ক্যামেরা ফ্রেমজুড়ে পূর্ণ থাকে, তবে সম্পূর্ণ ফ্রেম রিটার্ন করে।
+    
     Returns:
         list: 4টি corner points [(x,y), ...] যেমন [TL, TR, BL, BR]
-              অথবা None যদি ৪টি corner না পাওয়া যায়
+              অথবা None
     """
     if image is None or image.size == 0:
         return None
@@ -43,84 +36,65 @@ def find_corner_markers(image, min_area=None, max_area=None, aspect_tolerance=0.
     h, w = gray.shape[:2]
     img_area = float(h * w)
 
-    # Dynamic scaling based on image resolution
-    # On standard OMR sheets, a corner square is ~0.03% to 0.5% of total sheet area
-    if min_area is None or min_area <= 0:
-        min_area = max(50, int(img_area * 0.00004))
-    if max_area is None or max_area <= 0:
-        max_area = max(1000, int(img_area * 0.025))
-
-    # Multi-threshold strategies to handle shadows, direct sunlight, and dim rooms
-    otsu_val, _ = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    otsu_int = int(otsu_val)
-    thresholds_to_try = [otsu_int, int(otsu_int * 0.8), int(otsu_int * 1.2), 60, 80, 100, 120]
-
-    seen = set()
-    cleaned_thresh = []
-    for t in thresholds_to_try:
-        t = max(30, min(220, t))
-        if t not in seen:
-            seen.add(t)
-            cleaned_thresh.append(t)
-
-    best_corners = None
-    max_quad_area = 0
-
-    kernel = np.ones((3, 3), np.uint8)
-
-    for t_val in cleaned_thresh:
-        _, thresh = cv2.threshold(gray, t_val, 255, cv2.THRESH_BINARY_INV)
-        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
-
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # Step 1: True Corner Square Markers (■) Detection
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # কোণার মার্কার হতে হলে অবশ্যই ৪টি ভিন্ন কোয়ারড্রেন্টে (TL, TR, BL, BR)
+    # অবস্থিত হতে হবে এবং সমগ্র কাগজের অন্তত ৫০% বিস্তার থাকতে হবে।
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    for t_val in [60, 80, 100, 120, 140]:
+        _, thresh = cv2.threshold(blurred, t_val, 255, cv2.THRESH_BINARY_INV)
+        cnts, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
         squares = []
-        for c in contours:
+        for c in cnts:
             area = cv2.contourArea(c)
-            if not (min_area < area < max_area):
+            # Corner marker must be reasonably sized (0.02% to 3% of sheet)
+            if not (img_area * 0.0002 < area < img_area * 0.03):
                 continue
-
             peri = cv2.arcLength(c, True)
-            approx = cv2.approxPolyDP(c, 0.06 * peri, True)
-
-            # 4 or 5 vertices (in case of slight camera blur or rounding)
-            if len(approx) in (4, 5, 6):
-                x, y, bw, bh = cv2.boundingRect(approx)
-                aspect = bw / float(bh) if bh > 0 else 0
-                if abs(1.0 - aspect) < aspect_tolerance:
-                    cx = int(x + bw // 2)
-                    cy = int(y + bh // 2)
-                    squares.append((cx, cy))
+            approx = cv2.approxPolyDP(c, 0.05 * peri, True)
+            if len(approx) in [4, 5, 6]:
+                x, y, bw, bh = cv2.boundingRect(c)
+                ar = bw / float(bh) if bh > 0 else 0
+                if 0.65 <= ar <= 1.45:
+                    squares.append((int(x + bw / 2), int(y + bh / 2)))
 
         if len(squares) >= 4:
-            selected = _select_best_corners(squares, (h, w))
-            if selected and len(selected) == 4:
-                sorted_c = _sort_corners(selected)
-                qw = max(abs(sorted_c[1][0] - sorted_c[0][0]), abs(sorted_c[3][0] - sorted_c[2][0]))
-                qh = max(abs(sorted_c[2][1] - sorted_c[0][1]), abs(sorted_c[3][1] - sorted_c[1][1]))
-                quad_area = float(qw * qh)
+            mid_x, mid_y = w / 2, h / 2
+            tl = [p for p in squares if p[0] < mid_x and p[1] < mid_y]
+            tr = [p for p in squares if p[0] >= mid_x and p[1] < mid_y]
+            bl = [p for p in squares if p[0] < mid_x and p[1] >= mid_y]
+            br = [p for p in squares if p[0] >= mid_x and p[1] >= mid_y]
 
-                if quad_area > img_area * 0.15:
-                    if quad_area > max_quad_area:
-                        max_quad_area = quad_area
-                        best_corners = sorted_c
-                    # If already spans over 35% of the frame, this is an optimal match
-                    if quad_area > img_area * 0.35:
-                        logger.info(f"Corner markers cleanly found with thresh={t_val}")
-                        return best_corners
+            # All 4 quadrants MUST contain at least one candidate marker
+            if tl and tr and bl and br:
+                c_tl = min(tl, key=lambda p: p[0]**2 + p[1]**2)
+                c_tr = min(tr, key=lambda p: (w - p[0])**2 + p[1]**2)
+                c_bl = min(bl, key=lambda p: p[0]**2 + (h - p[1])**2)
+                c_br = min(br, key=lambda p: (w - p[0])**2 + (h - p[1])**2)
 
-    if best_corners:
-        logger.info(f"Corner markers selected (quad_area={max_quad_area:.0f})")
-        return best_corners
+                w_span = max(c_tr[0], c_br[0]) - min(c_tl[0], c_bl[0])
+                h_span = max(c_bl[1], c_br[1]) - min(c_tl[1], c_tr[1])
 
-    # Fallback: Sheet boundary contour detection
+                # Must span across at least 50% width and 50% height
+                if w_span > 0.50 * w and h_span > 0.50 * h:
+                    logger.info("True 4-corner square markers detected successfully")
+                    return _sort_corners([c_tl, c_tr, c_bl, c_br])
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # Step 2: Paper Sheet Boundary Detection (for sheets without ■)
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     sheet_quad = _find_sheet_outer_contour(gray, img_area)
     if sheet_quad:
-        logger.info("Found sheet boundary contour as perspective fallback")
+        logger.info("Sheet paper contour detected successfully")
         return _sort_corners(sheet_quad)
 
-    logger.warning("No corner markers or sheet contour could be reliably identified")
-    return None
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # Step 3: Full Frame Fallback
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    logger.info("Using full frame boundaries for sheet")
+    return [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]
 
 
 def _select_best_corners(candidates, image_shape):
@@ -166,26 +140,56 @@ def _select_best_corners(candidates, image_shape):
 
 def _find_sheet_outer_contour(gray, img_area):
     """
-    ফলব্যাক মেথড: ব্যাকগ্রাউন্ডের বিপরীতে কাগজের শিটের আয়তাকার বাউন্ডারি শনাক্ত করে।
+    ব্যাকগ্রাউন্ডের বিপরীতে কাগজের শিটের আয়তাকার বাউন্ডারি (Paper Contour) শনাক্ত করে।
+    মোবাইল ক্যামেরার ছবি, টেবিল বা ডেস্কের পটভূমি থেকে সাদা কাগজের ৪টি কোণা নির্ভুলভাবে বের করে।
     """
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    edges = cv2.Canny(blurred, 30, 120)
-    kernel = np.ones((5, 5), np.uint8)
-    edges = cv2.dilate(edges, kernel, iterations=1)
+    h, w = gray.shape[:2]
+    smooth = cv2.bilateralFilter(gray, 9, 75, 75)
 
-    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    contours = sorted(contours, key=cv2.contourArea, reverse=True)
+    best_quad = None
+    best_area = 0
 
-    for c in contours[:8]:
-        area = cv2.contourArea(c)
-        if area < img_area * 0.20:
-            break
-        peri = cv2.arcLength(c, True)
-        approx = cv2.approxPolyDP(c, 0.03 * peri, True)
-        if len(approx) == 4:
-            pts = [tuple(int(v) for v in p[0]) for p in approx]
-            return pts
-    return None
+    # 1. Otsu thresholding across multiple factors
+    otsu_val, _ = cv2.threshold(smooth, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    for factor in [1.0, 0.85, 1.15, 0.70]:
+        t_val = int(min(245, max(40, otsu_val * factor)))
+        _, binary = cv2.threshold(smooth, t_val, 255, cv2.THRESH_BINARY)
+        cnts, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        for c in cnts:
+            area = cv2.contourArea(c)
+            if area < img_area * 0.25 or area > img_area * 0.98:
+                continue
+            peri = cv2.arcLength(c, True)
+            for eps in [0.02, 0.03, 0.04, 0.05]:
+                approx = cv2.approxPolyDP(c, eps * peri, True)
+                if len(approx) == 4 and cv2.isContourConvex(approx):
+                    if area > best_area:
+                        best_area = area
+                        best_quad = [tuple(int(v) for v in p[0]) for p in approx]
+
+    if best_quad:
+        return best_quad
+
+    # 2. Canny edge fallback
+    for canny_low, canny_high in [(30, 100), (20, 80), (50, 150)]:
+        edges = cv2.Canny(smooth, canny_low, canny_high)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        dilated = cv2.dilate(edges, kernel, iterations=2)
+        cnts, _ = cv2.findContours(dilated, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        for c in cnts:
+            area = cv2.contourArea(c)
+            if area < img_area * 0.25 or area > img_area * 0.98:
+                continue
+            peri = cv2.arcLength(c, True)
+            for eps in [0.02, 0.03, 0.04, 0.05]:
+                approx = cv2.approxPolyDP(c, eps * peri, True)
+                if len(approx) == 4 and cv2.isContourConvex(approx):
+                    if area > best_area:
+                        best_area = area
+                        best_quad = [tuple(int(v) for v in p[0]) for p in approx]
+
+    return best_quad
 
 
 def _sort_corners(corners):
