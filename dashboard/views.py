@@ -624,8 +624,9 @@ def batch_regenerate_results_ajax(request, batch_id):
     batch = get_object_or_404(BatchJob, id=batch_id)
     client = LaravelOmrClient(base_url=settings.LARAVEL_API_URL)
 
-    # Invalidate cached answer keys
+    # Invalidate cached answer keys and template data
     _ANSWER_KEY_CACHE.clear()
+    _TEMPLATE_DATA_CACHE.clear()
 
     tpl_path = get_template_path(batch.template_name)
     tpl_data = _get_template_data(tpl_path)
@@ -912,6 +913,7 @@ def template_editor(request):
                 save_path = settings.OMR_TEMPLATES_DIR / new_filename
                 with open(save_path, 'w', encoding='utf-8') as f:
                     json.dump(parsed, f, indent=2, ensure_ascii=False)
+                _TEMPLATE_DATA_CACHE.clear()
 
                 messages.success(request, f'নতুন টেমপ্লেট "{new_filename}" সফলভাবে তৈরি ও সংরক্ষিত হয়েছে!')
                 return redirect(f"{request.path}?template={new_filename}")
@@ -919,6 +921,7 @@ def template_editor(request):
                 # Normal save to current file
                 with open(template_path, 'w', encoding='utf-8') as f:
                     json.dump(parsed, f, indent=2, ensure_ascii=False)
+                _TEMPLATE_DATA_CACHE.clear()
 
                 messages.success(request, f'টেমপ্লেট "{template_path.name}" সফলভাবে সংরক্ষিত হয়েছে!')
                 return redirect(f"{request.path}?template={template_path.name}")
@@ -1893,6 +1896,7 @@ def standalone_regenerate_results_ajax(request, exam_id):
     AJAX endpoint to recalculate scores and merit ranks for all sheets of a standalone exam.
     Useful after editing answer keys, changing marks policy, or fixing misread sets.
     """
+    _TEMPLATE_DATA_CACHE.clear()
     exam = get_object_or_404(StandaloneExam, id=exam_id)
     tpl_path = get_template_path(exam.template_name)
     tpl_data = _get_template_data(tpl_path)
@@ -3160,6 +3164,7 @@ def sheet_designer_save_template_ajax(request):
 
         with open(target_path, 'w', encoding='utf-8') as f:
             json.dump(template_payload, f, indent=2, ensure_ascii=False)
+        _TEMPLATE_DATA_CACHE.clear()
 
         logger.info(f"Custom OMR template saved: {target_path}")
         return JsonResponse({
