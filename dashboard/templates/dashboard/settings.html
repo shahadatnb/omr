@@ -30,7 +30,15 @@
                 <div class="row align-items-center g-4">
                     <div class="col-md-5 text-center border-end">
                         <div class="p-2 border rounded shadow-sm d-inline-block bg-white">
-                            <img id="mobileQrImg" src="{{ qr_data_uri }}" alt="Mobile Connect QR Code" class="img-fluid" style="width: 220px; height: 220px;">
+                            {% if qr_data_uri %}
+                                <img id="mobileQrImg" src="{{ qr_data_uri }}" alt="Mobile Connect QR Code" class="img-fluid" style="width: 220px; height: 220px;">
+                            {% else %}
+                                <div class="p-4 text-muted small" style="width: 220px; height: 220px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                                    <i class="fa fa-qrcode fa-3x mb-2 text-secondary"></i>
+                                    <span>QR কোডের জন্য টার্মিনালে চালান:</span>
+                                    <code class="mt-1">pip install qrcode</code>
+                                </div>
+                            {% endif %}
                         </div>
                         <div class="mt-2 text-muted small">
                             <i class="fa fa-camera text-primary me-1"></i>মোবাইলের ক্যামেরা দিয়ে স্ক্যান করুন
