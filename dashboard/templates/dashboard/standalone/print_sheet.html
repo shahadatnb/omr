@@ -186,7 +186,20 @@
                 <td class="fw-bold">Set {{ r.exam_set }}</td>
                 {% if subjects %}
                     {% for sub in subjects %}
-                    <td class="fw-bold">{{ r.subject_marks|get_item:sub.name }}</td>
+                    {% with stat=r.subject_marks|get_subject_stat:sub.name %}
+                    <td class="fw-bold">
+                        {% if stat %}
+                            <div>{{ stat.marks }}</div>
+                            {% if stat.has_details %}
+                                <div style="font-size: 10px; font-weight: normal; color: #555;">
+                                    <span style="color: #198754;">+{{ stat.correct }}</span> / <span style="color: #dc3545;">-{{ stat.wrong }}</span>
+                                </div>
+                            {% endif %}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    {% endwith %}
                     {% endfor %}
                 {% endif %}
                 <td class="text-success fw-bold">{{ r.correct_count }}</td>

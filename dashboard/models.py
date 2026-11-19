@@ -70,8 +70,30 @@ class ScanResult(models.Model):
             return '-'
         val = self.subject_marks.get(subject_name)
         if val is not None:
-            return f"{float(val):.2f}"
+            if isinstance(val, dict):
+                m = val.get('marks', 0)
+                try:
+                    return f"{float(m):.2f}"
+                except (ValueError, TypeError):
+                    return str(m)
+            try:
+                return f"{float(val):.2f}"
+            except (ValueError, TypeError):
+                return str(val)
         return '-'
+
+    def get_subject_detail(self, subject_name):
+        if not self.subject_marks or not isinstance(self.subject_marks, dict):
+            return None
+        val = self.subject_marks.get(subject_name)
+        if val is None:
+            return None
+        if isinstance(val, dict):
+            return val
+        try:
+            return {'marks': float(val), 'correct': None, 'wrong': None, 'unattempted': None}
+        except (ValueError, TypeError):
+            return {'marks': val, 'correct': None, 'wrong': None, 'unattempted': None}
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -171,8 +193,30 @@ class StandaloneResult(models.Model):
             return '-'
         val = self.subject_marks.get(subject_name)
         if val is not None:
-            return f"{float(val):.2f}"
+            if isinstance(val, dict):
+                m = val.get('marks', 0)
+                try:
+                    return f"{float(m):.2f}"
+                except (ValueError, TypeError):
+                    return str(m)
+            try:
+                return f"{float(val):.2f}"
+            except (ValueError, TypeError):
+                return str(val)
         return '-'
+
+    def get_subject_detail(self, subject_name):
+        if not self.subject_marks or not isinstance(self.subject_marks, dict):
+            return None
+        val = self.subject_marks.get(subject_name)
+        if val is None:
+            return None
+        if isinstance(val, dict):
+            return val
+        try:
+            return {'marks': float(val), 'correct': None, 'wrong': None, 'unattempted': None}
+        except (ValueError, TypeError):
+            return {'marks': val, 'correct': None, 'wrong': None, 'unattempted': None}
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:

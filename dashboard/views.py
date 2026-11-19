@@ -688,6 +688,8 @@ def sync_to_laravel(request, batch_id):
         return redirect('dashboard:batch_detail', batch_id=batch.id)
 
     payload = []
+    matched_item_ids = set()
+
     for r in matched_results:
         item_data = {
             'item_id': r.item_id,
@@ -697,16 +699,48 @@ def sync_to_laravel(request, batch_id):
             'is_absend': 0,
         }
         if r.subject_marks:
-            item_data['subject_marks'] = r.subject_marks
+            # Flatten to scalar marks so Laravel blade does not crash on {{ $subMark }}
+            sub_marks_scalar = {}
+            for s_name, s_val in r.subject_marks.items():
+                if isinstance(s_val, dict):
+                    sub_marks_scalar[s_name] = s_val.get('marks', 0)
+                else:
+                    sub_marks_scalar[s_name] = s_val
+            item_data['subject_marks'] = sub_marks_scalar
         payload.append(item_data)
+        matched_item_ids.add(r.item_id)
 
     client = LaravelOmrClient(base_url=settings.LARAVEL_API_URL)
+
+    # Online absent handling: If student is enrolled in this class test but did not sit for the exam
+    absent_count = 0
+    try:
+        info = client.get_class_test_info(batch.class_test_id)
+        enrolled_students = info.get('students', [])
+        for s in enrolled_students:
+            s_item_id = s.get('item_id')
+            if s_item_id and s_item_id not in matched_item_ids:
+                payload.append({
+                    'item_id': s_item_id,
+                    'marks': 'A',
+                    'correct_answer': 0,
+                    'wrong_answer': 0,
+                    'is_absend': 1,
+                })
+                absent_count += 1
+    except Exception as e:
+        logger.warning(f"Could not fetch enrolled students for absent handling: {e}")
+
     try:
         res = client.batch_update_results(payload)
         batch.synced_to_laravel = True
         batch.synced_at = timezone.now()
         batch.save()
-        messages.success(request, f"Successfully synced {res.get('updated', len(payload))} student marks to Laravel!")
+        success_msg = f"সফলভাবে {len(matched_results)} জন শিক্ষার্থীর নম্বর"
+        if absent_count > 0:
+            success_msg += f" এবং {absent_count} জন অনুপস্থিত (Absent/A) শিক্ষার্থীর স্ট্যাটাস"
+        success_msg += " লারাভেলে সিঙ্ক করা হয়েছে!"
+        messages.success(request, success_msg)
     except Exception as e:
         logger.exception("Failed to sync to Laravel")
         messages.error(request, f"Failed to sync with Laravel API: {e}")
@@ -2072,6 +2106,7 @@ def standalone_result_detail_ajax(request, result_id):
         'rank': res.rank,
         'total_questions': exam.total_questions,
         'image_url': res.image_file.url if res.image_file else None,
+        'subject_marks': res.subject_marks,
         'breakdown': breakdown
     })
 
@@ -2407,7 +2442,11 @@ def standalone_export_csv(request, exam_id):
         row = [r.rank, r.roll_no, r.exam_set]
         if subjects:
             for s in subjects:
-                row.append(r.get_subject_mark(s['name']))
+                d = r.get_subject_detail(s['name'])
+                if d and d.get('correct') is not None:
+                    row.append(f"{r.get_subject_mark(s['name'])} (+{d.get('correct')}/-{d.get('wrong')})")
+                else:
+                    row.append(r.get_subject_mark(s['name']))
         row.extend([r.correct_count, r.wrong_count, r.unattempted_count, r.marks, f"{pct}%"])
         writer.writerow(row)
 

@@ -171,7 +171,8 @@ def calculate_score(student_answers, answer_key, correct_mark=1.0, wrong_mark=-0
         'total_questions': total_questions,
         'max_marks': max_marks,
         'percentage': percentage,
-        'subject_marks': subject_marks if subjects else None,
+        'subject_marks': subject_details if subjects else None,
+        'subject_marks_scalar': subject_marks if subjects else None,
         'subject_details': subject_details if subjects else None,
     }
 

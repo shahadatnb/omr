@@ -111,7 +111,7 @@
                         <th>সেট</th>
                         {% if subjects %}
                             {% for sub in subjects %}
-                            <th class="text-primary">{{ sub.name }} <small class="text-muted">({{ sub.total_questions }})</small></th>
+                            <th class="text-primary text-center">{{ sub.name }} <small class="text-muted">({{ sub.total_questions }})</small></th>
                             {% endfor %}
                         {% endif %}
                         <th>সঠিক (+)</th>
@@ -185,9 +185,21 @@
                         </td>
                         {% if subjects %}
                             {% for sub in subjects %}
-                            <td>
-                                <strong class="text-dark">{{ r.subject_marks|get_item:sub.name }}</strong>
+                            {% with stat=r.subject_marks|get_subject_stat:sub.name %}
+                            <td class="text-center align-middle">
+                                {% if stat %}
+                                    <div class="fw-bold text-dark">{{ stat.marks }}</div>
+                                    {% if stat.has_details %}
+                                        <div class="d-flex justify-content-center gap-1 mt-1">
+                                            <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25" style="font-size: 10px;" title="সঠিক">+{{ stat.correct }}</span>
+                                            <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25" style="font-size: 10px;" title="ভুল">-{{ stat.wrong }}</span>
+                                        </div>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
                             </td>
+                            {% endwith %}
                             {% endfor %}
                         {% endif %}
                         <td><span class="text-success fw-bold" id="standalone-correct-{{ r.id }}">+{{ r.correct_count }}</span></td>
@@ -304,6 +316,9 @@
                         <div id="modalEditStatusMsg" class="small mt-2 text-center"></div>
                     </div>
                 </div>
+
+                <!-- Subject-wise Breakdown -->
+                <div id="modalSubjectBreakdown" class="mb-3"></div>
 
                 <!-- Legend -->
                 <div class="small mb-3 d-flex gap-3">
@@ -623,6 +638,24 @@ async function loadStudentAnswers(resultId) {
         document.getElementById('badgeCorrect').innerText = `সঠিক: ${data.correct_count}`;
         document.getElementById('badgeWrong').innerText = `ভুল: ${data.wrong_count}`;
         document.getElementById('badgeUnattempted').innerText = `ছেড়েছে: ${data.unattempted_count}`;
+
+        const subContainer = document.getElementById('modalSubjectBreakdown');
+        if (subContainer) {
+            subContainer.innerHTML = '';
+            if (data.subject_marks && Object.keys(data.subject_marks).length > 0) {
+                let html = '<div class="d-flex flex-wrap gap-2 p-2 bg-light rounded border">';
+                for (const [subName, subStat] of Object.entries(data.subject_marks)) {
+                    let markVal = (typeof subStat === 'object' && subStat !== null) ? Number(subStat.marks || 0).toFixed(2) : Number(subStat || 0).toFixed(2);
+                    let counts = '';
+                    if (typeof subStat === 'object' && subStat !== null && (subStat.correct !== undefined || subStat.wrong !== undefined)) {
+                        counts = ` <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-25 ms-1">+${subStat.correct || 0}</span><span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-25 ms-1">-${subStat.wrong || 0}</span>`;
+                    }
+                    html += `<div class="border rounded px-2 py-1 bg-white small"><strong class="text-primary">${subName}:</strong> <span class="fw-bold">${markVal}</span>${counts}</div>`;
+                }
+                html += '</div>';
+                subContainer.innerHTML = html;
+            }
+        }
 
         if (data.image_url) {
             document.getElementById('modalImageLink').innerHTML = `

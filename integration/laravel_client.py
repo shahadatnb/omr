@@ -11,7 +11,7 @@ Laravel 7 Admission Challenge system:
 import os
 import logging
 import requests
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ class LaravelOmrClient:
     def update_result(
         self,
         item_id: int,
-        marks: float,
+        marks: Union[float, int, str],
         correct_answer: Optional[int] = None,
         wrong_answer: Optional[int] = None,
         is_absend: int = 0,

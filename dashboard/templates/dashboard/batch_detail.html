@@ -123,7 +123,7 @@
                         <th>শিক্ষার্থীর তথ্য (লারাভেল)</th>
                         {% if subjects %}
                             {% for sub in subjects %}
-                            <th class="text-primary">{{ sub.name }} <small class="text-muted">({{ sub.total_questions }})</small></th>
+                            <th class="text-primary text-center">{{ sub.name }} <small class="text-muted">({{ sub.total_questions }})</small></th>
                             {% endfor %}
                         {% endif %}
                         <th>সঠিক / ভুল</th>
@@ -184,9 +184,21 @@
                         </td>
                         {% if subjects %}
                             {% for sub in subjects %}
-                            <td>
-                                <strong class="text-dark">{{ item.subject_marks|get_item:sub.name }}</strong>
+                            {% with stat=item.subject_marks|get_subject_stat:sub.name %}
+                            <td class="text-center align-middle">
+                                {% if stat %}
+                                    <div class="fw-bold text-dark">{{ stat.marks }}</div>
+                                    {% if stat.has_details %}
+                                        <div class="d-flex justify-content-center gap-1 mt-1">
+                                            <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25" style="font-size: 10px;" title="সঠিক">+{{ stat.correct }}</span>
+                                            <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25" style="font-size: 10px;" title="ভুল">-{{ stat.wrong }}</span>
+                                        </div>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
                             </td>
+                            {% endwith %}
                             {% endfor %}
                         {% endif %}
                         <td>
